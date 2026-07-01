@@ -1,97 +1,104 @@
 <template>
-  <section class="page" v-if="article">
-    <header class="article-hero">
+  <div class="article-detail-page">
+    <section class="page state-box" v-if="loading">
+      <p class="state-text">加载中...</p>
+    </section>
+
+    <section class="page state-box error-box" v-else-if="loadError">
+      <p class="state-text">{{ loadError }}</p>
       <router-link class="back-link" to="/">&larr; 返回列表</router-link>
-      <p class="eyebrow">LONGFORM ENTRY</p>
-      <h1>{{ article.title }}</h1>
-      <div class="hero-meta">
-        <span>{{ article.publishTime || '待发布' }}</span>
-        <span v-if="article.isTop" class="top-badge">置顶</span>
-        <span>阅读 {{ article.viewCount || 0 }}</span>
-        <button
-          class="like-btn"
-          :class="{ liked: liked }"
-          @click="doLike"
-          :disabled="!auth.isLoggedIn"
-          :title="auth.isLoggedIn ? '点赞' : '登录后可点赞'"
-        >
-          <span class="like-icon">{{ liked ? '♥' : '♡' }}</span>
-          <span>{{ article.likeCount || 0 }}</span>
-        </button>
-      </div>
-      <img v-if="article.coverUrl" :src="article.coverUrl" class="detail-cover" alt="cover" />
-      <div class="hero-line"></div>
-    </header>
-
-    <section class="article-body">
-      <div class="content" v-html="renderedMarkdown" @click="onImageClick"></div>
     </section>
 
-    <section class="comment-card" v-if="article.isCommentEnabled !== 0">
-      <div class="comment-head">
-        <h2>评论区</h2>
-        <span v-if="auth.isLoggedIn">{{ comments.length }} 条互动</span>
-      </div>
+    <section class="page" v-else-if="article">
+      <header class="article-hero">
+        <router-link class="back-link" to="/">&larr; 返回列表</router-link>
+        <p class="eyebrow">LONGFORM ENTRY</p>
+        <h1>{{ article.title }}</h1>
+        <div class="hero-meta">
+          <span>{{ article.publishTime || '待发布' }}</span>
+          <span v-if="article.isTop" class="top-badge">置顶</span>
+          <span>阅读 {{ article.viewCount || 0 }}</span>
+          <button
+            class="like-btn"
+            :class="{ liked: liked }"
+            @click="doLike"
+            :disabled="!auth.isLoggedIn"
+            :title="auth.isLoggedIn ? '点赞' : '登录后可点赞'"
+          >
+            <span class="like-icon">{{ liked ? '♥' : '♡' }}</span>
+            <span>{{ article.likeCount || 0 }}</span>
+          </button>
+        </div>
+        <img v-if="article.coverUrl" :src="article.coverUrl" class="detail-cover" alt="cover" />
+        <div class="hero-line"></div>
+      </header>
 
-      <!-- Guest mode: login to view comments -->
-      <div v-if="!auth.isLoggedIn" class="guest-banner">
-        <p>登录后可查看和发表评论。</p>
-        <router-link :to="`/login?redirect=/article/${article.id}`" class="login-cta">立即登录 / 注册</router-link>
-      </div>
+      <section class="article-body">
+        <div class="content" v-html="renderedMarkdown" @click="onImageClick"></div>
+      </section>
 
-      <!-- Logged in: full comment section -->
-      <template v-else>
-        <div class="composer">
-          <textarea v-model="content" placeholder="写下你的看法..." rows="3"></textarea>
-          <button class="primary-btn" @click="submitComment">发布评论</button>
+      <section class="comment-card" v-if="article.isCommentEnabled !== 0">
+        <div class="comment-head">
+          <h2>评论区</h2>
+          <span v-if="auth.isLoggedIn">{{ comments.length }} 条互动</span>
         </div>
 
-        <p v-if="msg" class="msg" :class="{ error: isError }">{{ msg }}</p>
-
-        <ul class="comment-list" v-if="comments.length > 0">
-          <li v-for="c in comments" :key="c.id" class="comment-item">
-            <div class="comment-body">
-              <div class="comment-left">
-                <img v-if="c.avatar" :src="c.avatar" class="comment-avatar-img" />
-                <span v-else class="comment-avatar">{{ (c.nickname || '用户')[0] }}</span>
-              </div>
-              <div class="comment-main">
-                <div class="comment-meta">
-                  <span class="comment-author">{{ c.nickname || '用户' }}</span>
-                  <span class="comment-time">{{ fmtTime(c.createdAt) }}</span>
-                </div>
-                <p class="comment-text">{{ c.content }}</p>
-                <div class="reply-row">
-                  <input v-model="replyContent[c.id]" :placeholder="`回复 ${c.nickname || '用户'}...`" />
-                  <button class="ghost-btn" @click="submitReply(c)">回复</button>
-                </div>
-              </div>
-            </div>
-          </li>
-        </ul>
-
-        <div v-else class="empty-comments">
-          <p>暂无评论，成为第一个参与讨论的人。</p>
+        <!-- Guest mode: login to view comments -->
+        <div v-if="!auth.isLoggedIn" class="guest-banner">
+          <p>登录后可查看和发表评论。</p>
+          <router-link :to="`/login?redirect=/article/${article.id}`" class="login-cta">立即登录 / 注册</router-link>
         </div>
-      </template>
+
+        <!-- Logged in: full comment section -->
+        <template v-else>
+          <div class="composer">
+            <textarea v-model="content" placeholder="写下你的看法..." rows="3"></textarea>
+            <button class="primary-btn" @click="submitComment">发布评论</button>
+          </div>
+
+          <p v-if="msg" class="msg" :class="{ error: isError }">{{ msg }}</p>
+
+          <ul class="comment-list" v-if="comments.length > 0">
+            <li v-for="c in comments" :key="c.id" class="comment-item">
+              <div class="comment-body">
+                <div class="comment-left">
+                  <img v-if="c.avatar" :src="c.avatar" class="comment-avatar-img" />
+                  <span v-else class="comment-avatar">{{ (c.nickname || '用户')[0] }}</span>
+                </div>
+                <div class="comment-main">
+                  <div class="comment-meta">
+                    <span class="comment-author">{{ c.nickname || '用户' }}</span>
+                    <span class="comment-time">{{ fmtTime(c.createdAt) }}</span>
+                  </div>
+                  <p class="comment-text">{{ c.content }}</p>
+                  <div class="reply-row">
+                    <input v-model="replyContent[c.id]" :placeholder="`回复 ${c.nickname || '用户'}...`" />
+                    <button class="ghost-btn" @click="submitReply(c)">回复</button>
+                  </div>
+                </div>
+              </div>
+            </li>
+          </ul>
+
+          <div v-else class="empty-comments">
+            <p>暂无评论，成为第一个参与讨论的人。</p>
+          </div>
+        </template>
+      </section>
     </section>
-  </section>
 
-  <section class="page state-box" v-else>
-    <p class="state-text">加载中...</p>
-  </section>
-
-  <!-- 图片点击放大预览 -->
-  <Teleport to="body">
-    <div class="img-preview-overlay" v-if="previewSrc" @click="previewSrc = ''">
-      <img :src="previewSrc" @click.stop alt="preview" />
-      <button class="img-preview-close" @click="previewSrc = ''">&times;</button>
-    </div>
-  </Teleport>
+    <!-- 图片点击放大预览 -->
+    <Teleport to="body">
+      <div class="img-preview-overlay" v-if="previewSrc" @click="previewSrc = ''">
+        <img :src="previewSrc" @click.stop alt="preview" />
+        <button class="img-preview-close" @click="previewSrc = ''">&times;</button>
+      </div>
+    </Teleport>
+  </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { addComment, articleDetail, commentList, toggleLike } from '../api'
 import { useAuthStore } from '../stores/auth'
@@ -107,6 +114,8 @@ const liked = ref(false)
 const msg = ref('')
 const isError = ref(false)
 const replyContent = ref({})
+const loading = ref(false)
+const loadError = ref('')
 
 const md = new MarkdownIt({ html: true, breaks: true })
 
@@ -124,8 +133,18 @@ const renderedMarkdown = computed(() => {
 
 const load = async () => {
   const id = route.params.id
-  article.value = await articleDetail(id)
-  comments.value = await commentList(id)
+  loading.value = true
+  loadError.value = ''
+  article.value = null
+  comments.value = []
+  try {
+    article.value = await articleDetail(id)
+    comments.value = await commentList(id)
+  } catch (e) {
+    loadError.value = e.message || '文章加载失败'
+  } finally {
+    loading.value = false
+  }
 }
 
 const submitComment = async () => {
@@ -171,10 +190,20 @@ const onImageClick = (e) => {
 }
 
 onMounted(load)
+
+watch(
+  () => route.params.id,
+  async (nextId, prevId) => {
+    if (nextId && nextId !== prevId) {
+      await load()
+    }
+  }
+)
 </script>
 
 <style scoped>
 .page { max-width: 960px; margin: 0 auto; padding: 56px 24px 72px; }
+.article-detail-page { min-height: 100%; }
 
 .article-hero { margin-bottom: 36px; }
 .back-link {
@@ -199,7 +228,8 @@ onMounted(load)
   font-size: clamp(38px, 5vw, 68px);
   line-height: 1.1;
   letter-spacing: .03em;
-  color: rgba(255, 255, 255, 0.95);
+  color: rgba(255, 255, 255, 0.98);
+  text-shadow: 0 4px 18px rgba(0, 0, 0, 0.42);
 }
 .summary {
   margin-top: 16px;
@@ -213,7 +243,7 @@ onMounted(load)
   gap: 16px;
   align-items: center;
   margin-top: 14px;
-  color: rgba(255, 255, 255, 0.65);
+  color: rgba(255, 255, 255, 0.74);
   font-size: 14px;
   letter-spacing: .04em;
 }
@@ -277,6 +307,7 @@ onMounted(load)
   box-shadow: var(--web-shadow);
 }
 .content { line-height: 1.9; color: rgba(255, 255, 255, 0.85); font-size: 17px; }
+.content { line-height: 1.9; color: rgba(255, 255, 255, 0.9); font-size: 17px; }
 .content :deep(h1) { font-size: 36px; margin: 32px 0 16px; line-height: 1.15; }
 .content :deep(h2) { font-size: 28px; margin: 28px 0 14px; line-height: 1.2; }
 .content :deep(h3) { font-size: 22px; margin: 24px 0 12px; line-height: 1.25; }
@@ -328,6 +359,7 @@ onMounted(load)
 }
 .comment-head h2 { margin: 0; font-size: 28px; }
 .comment-head span { color: rgba(255, 255, 255, 0.65); font-size: 14px; }
+.comment-head span { color: rgba(255, 255, 255, 0.74); font-size: 14px; }
 
 .guest-banner {
   padding: 24px;
@@ -436,8 +468,9 @@ button:hover { transform: translateY(-1px); }
 .comment-main { flex: 1; min-width: 0; }
 .comment-meta { display: flex; gap: 10px; align-items: baseline; margin-bottom: 6px; }
 .comment-author { font-weight: 600; font-size: 14px; color: rgba(255, 255, 255, 0.85); }
-.comment-time { font-size: 12px; color: rgba(255, 255, 255, 0.65); }
-.comment-text { margin: 0 0 10px; line-height: 1.7; font-size: 15px; color: rgba(255, 255, 255, 0.85); }
+.comment-author { font-weight: 600; font-size: 14px; color: rgba(255, 255, 255, 0.92); }
+.comment-time { font-size: 12px; color: rgba(255, 255, 255, 0.72); }
+.comment-text { margin: 0 0 10px; line-height: 1.7; font-size: 15px; color: rgba(255, 255, 255, 0.9); }
 
 .reply-row {
   margin-top: 4px;

@@ -5,6 +5,7 @@
       <p class="hero-sub">
         这里分享个人在技术学习、系统设计、开发历程的文章。
       </p>
+
       <div class="hero-line"></div>
     </header>
 
@@ -13,27 +14,49 @@
     </div>
 
     <div v-else class="layout-with-sidebar">
-      <aside class="sidebar" v-if="categories.length > 0">
+      <aside class="sidebar">
         <nav class="category-nav">
           <h3 class="sidebar-title">浏览</h3>
           <ul class="category-list">
-            <li class="category-item" :class="{ active: activeMode === 'all' }" @click="switchMode('all')">
-              全部文章
+            <li>
+              <button
+                type="button"
+                class="category-item category-button"
+                :class="{ active: activeMode === 'all' }"
+                @click="switchMode('all')"
+                :aria-pressed="activeMode === 'all'"
+              >
+                全部文章
+              </button>
             </li>
-            <li class="category-item" :class="{ active: activeMode === 'hot' }" @click="switchMode('hot')">
-              🔥 热门文章
+            <li>
+              <button
+                type="button"
+                class="category-item category-button"
+                :class="{ active: activeMode === 'hot' }"
+                @click="switchMode('hot')"
+                :aria-pressed="activeMode === 'hot'"
+              >
+                🔥 热门文章
+              </button>
             </li>
           </ul>
           <h3 class="sidebar-title" style="margin-top:16px">分类</h3>
-          <ul class="category-list">
+          <p v-if="metaError && categories.length === 0" class="sidebar-error">分类加载失败</p>
+          <ul v-else class="category-list">
             <li
               v-for="category in categories"
               :key="category.id"
-              class="category-item"
-              :class="{ active: activeMode === 'category' && activeCategoryId === category.id }"
-              @click="switchCategory(category.id)"
             >
-              {{ category.name }}
+              <button
+                type="button"
+                class="category-item category-button"
+                :class="{ active: activeMode === 'category' && activeCategoryId === category.id }"
+                @click="switchCategory(category.id)"
+                :aria-pressed="activeMode === 'category' && activeCategoryId === category.id"
+              >
+                {{ category.name }}
+              </button>
             </li>
           </ul>
         </nav>
@@ -45,7 +68,15 @@
           <div class="section-head compact">
             <div>
               <p class="section-eyebrow">ALL ARTICLES</p>
-              <h2>{{ activeMode === 'category' ? categoryName(activeCategoryId) : '全部文章' }}</h2>
+              <h2>
+                {{
+                  activeMode === 'category'
+                    ? categoryName(activeCategoryId)
+                    : activeMode === 'tag'
+                      ? tagName(activeTagId)
+                      : '全部文章'
+                }}
+              </h2>
             </div>
             <span class="section-hint">{{ totalCount }} 篇文章 · 按阅读量排序</span>
           </div>
@@ -100,7 +131,11 @@
             <span class="section-hint">按点赞量排序</span>
           </div>
 
-          <div class="hot-grid" v-if="hotList.length > 0">
+          <div v-if="hotLoading" class="state-box narrow">
+            <p class="state-text">正在加载热门文章...</p>
+          </div>
+
+          <div class="hot-grid" v-else-if="hotList.length > 0">
             <article v-for="item in hotList" :key="`hot-${item.id}`" class="hot-card">
               <p class="hot-meta">
                 <span>
@@ -126,18 +161,24 @@
         </section>
       </div>
 
-      <aside class="sidebar sidebar-right" v-if="tags.length > 0">
+      <aside class="sidebar sidebar-right" v-if="tags.length > 0 || metaError">
         <nav class="category-nav">
           <h3 class="sidebar-title">热门标签</h3>
-          <ul class="category-list">
+          <p v-if="metaError && tags.length === 0" class="sidebar-error">标签加载失败</p>
+          <ul v-else class="category-list">
             <li
               v-for="tag in tags"
               :key="tag.id"
-              class="category-item"
-              :class="{ active: activeTagId === tag.id }"
-              @click="switchTag(tag.id)"
             >
-              {{ tag.name }}
+              <button
+                type="button"
+                class="category-item category-button"
+                :class="{ active: activeMode === 'tag' && activeTagId === tag.id }"
+                @click="switchTag(tag.id)"
+                :aria-pressed="activeMode === 'tag' && activeTagId === tag.id"
+              >
+                {{ tag.name }}
+              </button>
             </li>
           </ul>
         </nav>
@@ -162,8 +203,10 @@ const pageNum = ref(1)
 const pageSize = ref(10)
 const pages = ref(1)
 const loading = ref(false)
+const hotLoading = ref(false)
+const metaError = ref(false)
 const total = ref(0)
-const activeMode = ref('all')   // 'all' | 'hot' | 'category'
+const activeMode = ref('all')   // 'all' | 'hot' | 'category' | 'tag'
 const activeCategoryId = ref(null)
 const activeTagId = ref(null)
 
@@ -177,16 +220,31 @@ const categoryName = (categoryId) => {
   return categoryMap.value[categoryId] || `分类 #${categoryId}`
 }
 
+const tagName = (tagId) => {
+  if (!tagId) return '热门文章'
+  return tagMap.value[tagId] || `标签 #${tagId}`
+}
+
 const syncFiltersFromRoute = () => {
+  const isHot = route.query.hot === '1'
   activeCategoryId.value = route.query.category ? Number(route.query.category) : null
   activeTagId.value = route.query.tag ? Number(route.query.tag) : null
+  if (isHot) {
+    activeMode.value = 'hot'
+  } else if (activeTagId.value) {
+    activeMode.value = 'tag'
+  } else if (activeCategoryId.value) {
+    activeMode.value = 'category'
+  } else {
+    activeMode.value = 'all'
+  }
 }
 
 const loadArticles = async () => {
   loading.value = true
   try {
     const cid = activeMode.value === 'category' ? (activeCategoryId.value || undefined) : undefined
-    const tid = activeTagId.value || undefined
+    const tid = activeMode.value === 'tag' ? (activeTagId.value || undefined) : undefined
     const page = await articleList(pageNum.value, pageSize.value, cid, tid)
     list.value = page.records
     pages.value = page.pages || 1
@@ -197,21 +255,34 @@ const loadArticles = async () => {
 }
 
 const loadMeta = async () => {
-  const [categoryRes, tagRes, hotRes] = await Promise.all([
-    categoryList(),
-    tagList(),
-    hotArticleList(6)
-  ])
-  categories.value = categoryRes
-  tags.value = tagRes
-  hotList.value = hotRes
-}
+  // Load categories independently
+  try {
+    const res = await categoryList()
+    categories.value = res || []
+  } catch {
+    categories.value = []
+    metaError.value = true
+  }
 
-const buildQuery = () => {
-  const q = {}
-  if (activeCategoryId.value) q.category = String(activeCategoryId.value)
-  if (activeTagId.value) q.tag = String(activeTagId.value)
-  return q
+  // Load tags independently
+  try {
+    const res = await tagList()
+    tags.value = res || []
+  } catch {
+    tags.value = []
+    metaError.value = true
+  }
+
+  // Load hot articles independently with separate loading state
+  hotLoading.value = true
+  try {
+    const res = await hotArticleList(6)
+    hotList.value = res || []
+  } catch {
+    hotList.value = []
+  } finally {
+    hotLoading.value = false
+  }
 }
 
 const switchMode = async (mode) => {
@@ -219,7 +290,14 @@ const switchMode = async (mode) => {
   activeMode.value = mode
   activeCategoryId.value = null
   activeTagId.value = null
-  if (mode === 'all') await loadArticles()
+  if (mode === 'all') {
+    await router.push({ path: '/' })
+    await loadArticles()
+  } else if (mode === 'hot') {
+    await router.push({ path: '/', query: { hot: '1' } })
+  } else {
+    await loadArticles()
+  }
 }
 
 const switchCategory = async (categoryId) => {
@@ -227,24 +305,30 @@ const switchCategory = async (categoryId) => {
   activeMode.value = 'category'
   activeCategoryId.value = categoryId
   activeTagId.value = null
+  await router.push({ path: '/', query: { category: String(categoryId) } })
   await loadArticles()
 }
 
 const switchTag = async (tagId) => {
   pageNum.value = 1
-  activeTagId.value = activeTagId.value === tagId ? null : tagId
+  activeMode.value = 'tag'
+  activeTagId.value = tagId
+  activeCategoryId.value = null
+  await router.push({ path: '/', query: { tag: String(tagId) } })
   await loadArticles()
 }
 
 watch(() => route.query, async () => {
   syncFiltersFromRoute()
-  if (activeMode.value === 'all' || activeMode.value === 'category') await loadArticles()
+  if (activeMode.value === 'all' || activeMode.value === 'category' || activeMode.value === 'tag') {
+    await loadArticles()
+  }
 }, { deep: true })
 
-onMounted(async () => {
+onMounted(() => {
   syncFiltersFromRoute()
-  await loadMeta()
-  await loadArticles()
+  loadMeta()
+  loadArticles()
 })
 </script>
 
@@ -263,12 +347,13 @@ onMounted(async () => {
   font-family: var(--web-font-display);
   font-size: clamp(48px, 7vw, 96px);
   line-height: 1.1;
-  letter-spacing: .04em;
-  color: rgba(255, 255, 255, 0.9);
+  letter-spacing: .03em;
+  color: rgba(255, 255, 255, 0.96);
+  text-shadow: 0 4px 18px rgba(0, 0, 0, 0.42);
 }
 .hero-sub {
   margin: 20px 0 0;
-  color: rgba(255, 255, 255, 0.65);
+  color: rgba(255, 255, 255, 0.74);
   font-size: 18px;
   line-height: 1.8;
   max-width: 56ch;
@@ -294,9 +379,10 @@ onMounted(async () => {
   font-family: var(--web-font-display);
   font-size: clamp(28px, 4vw, 42px);
   line-height: 1.1;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.96);
+  text-shadow: 0 3px 12px rgba(0, 0, 0, 0.32);
 }
-.section-hint { color: rgba(255, 255, 255, 0.4); font-size: 14px; }
+.section-hint { color: rgba(255, 255, 255, 0.58); font-size: 14px; }
 
 .layout-with-sidebar {
   display: grid;
@@ -318,7 +404,17 @@ onMounted(async () => {
   font-family: var(--web-font-display);
   font-size: 15px;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.sidebar-error {
+  margin: 0;
+  padding: 10px 16px;
+  font-size: 13px;
+  color: rgba(255, 180, 80, 0.85);
+  border-radius: 8px;
+  background: rgba(255, 180, 80, 0.1);
+  border: 1px solid rgba(255, 180, 80, 0.2);
 }
 
 .category-list {
@@ -328,9 +424,20 @@ onMounted(async () => {
 
 .category-item {
   padding: 10px 16px; border-radius: 999px; cursor: pointer;
-  font-size: 14px; color: rgba(255, 255, 255, 0.65);
+  font-size: 14px; color: rgba(255, 255, 255, 0.74);
   transition: all .22s ease;
   display: flex; justify-content: space-between; align-items: center; font-weight: 500;
+}
+.category-button {
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  appearance: none;
+}
+.category-button:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.35);
+  outline-offset: 2px;
 }
 .category-item:hover {
   background: rgba(255, 255, 255, 0.1);
@@ -387,11 +494,11 @@ onMounted(async () => {
 .hot-card h3 {
   margin: 0 0 16px; font-size: 22px; line-height: 1.3;
 }
-.hot-card h3 a { color: rgba(255, 255, 255, 0.9); }
+.hot-card h3 a { color: rgba(255, 255, 255, 0.96); }
 .hot-card h3 a:hover { color: var(--web-accent-3); }
 .hot-summary {
   margin: 0 0 auto;
-  color: rgba(255, 255, 255, 0.65);
+  color: rgba(255, 255, 255, 0.74);
   font-size: 14px; line-height: 1.75;
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
@@ -507,11 +614,12 @@ onMounted(async () => {
   line-height: 1.2;
 }
 .card h2 a { color: rgba(255, 255, 255, 0.95); transition: color .2s ease; }
+.card h2 a { color: rgba(255, 255, 255, 0.96); transition: color .2s ease; }
 .card h2 a:hover { color: var(--web-accent-3); }
 
 .card-summary {
   margin: 0;
-  color: rgba(255, 255, 255, 0.65);
+  color: rgba(255, 255, 255, 0.74);
   font-size: 15px;
   line-height: 1.7;
   max-width: 58ch;
@@ -562,6 +670,7 @@ onMounted(async () => {
 }
 .pager button:disabled { opacity: .35; cursor: not-allowed; }
 .pager-info { font-size: 14px; color: rgba(255, 255, 255, 0.65); }
+.pager-info { font-size: 14px; color: rgba(255, 255, 255, 0.72); }
 
 @media (min-width: 1100px) {
   .hot-grid {

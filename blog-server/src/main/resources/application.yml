@@ -7,10 +7,10 @@ spring:
   application:
     name: blog-server
   datasource:
-    url: ${spring.datasource.url}
-    username: ${spring.datasource.username}
-    password: ${spring.datasource.password}
-    driver-class-name: ${spring.datasource.driver-class-name}
+    url: ${DB_URL:jdbc:mysql://localhost:3306/blog_system?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+    driver-class-name: ${DRIVER_CLASS_NAME:com.mysql.cj.jdbc.Driver}
   servlet:
     multipart:
       max-file-size: 2MB
@@ -32,8 +32,8 @@ sa-token:
   is-concurrent: true
   is-share: false
   is-log: false
-  jwt-secret-key: ${sa-token.jwt-secret-key}
+  jwt-secret-key: ${JWT_SECRET:default-jwt-secret}
 
 blog:
   upload:
-    dir: ${blog.upload.dir}
+    dir: ${BLOG_UPLOAD_DIR:./uploads}

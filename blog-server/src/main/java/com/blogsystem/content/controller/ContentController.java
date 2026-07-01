@@ -4,6 +4,7 @@ import cn.dev33.satoken.annotation.SaCheckLogin;
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.blogsystem.common.ApiResponse;
+import com.blogsystem.common.PageUtil;
 import com.blogsystem.content.dto.ArticleSaveRequest;
 import com.blogsystem.content.dto.CategorySaveRequest;
 import com.blogsystem.log.annotation.OpLog;
@@ -40,7 +41,7 @@ public class ContentController {
     }
 
     /**
-     * 文章分页查询，支持按状态 / 分类 / 标签筛选
+     * 文章分页查询（公开端强制只返回已发布，管理端可传 status 筛选）
      */
     @GetMapping("/article/list")
     public ApiResponse<Page<Article>> listArticle(@RequestParam(required = false) Integer status,
@@ -48,6 +49,12 @@ public class ContentController {
                                                   @RequestParam(required = false) Long tagId,
                                                   @RequestParam(defaultValue = "1") Long pageNum,
                                                   @RequestParam(defaultValue = "10") Long pageSize) {
+        // 公开端：未登录或非管理员只能看已发布文章
+        boolean isAdmin = false;
+        try { isAdmin = cn.dev33.satoken.stp.StpUtil.hasPermission("admin:user:list"); } catch (Exception ignored) {}
+        if (!isAdmin) status = 1;
+        pageNum = PageUtil.clampPageNum(pageNum);
+        pageSize = PageUtil.clampPageSize(pageSize);
         return ApiResponse.ok(contentService.listArticles(status, categoryId, tagId, pageNum, pageSize));
     }
 
@@ -60,11 +67,17 @@ public class ContentController {
     }
 
     /**
-     * 文章详情，阅读量 +1
+     * 文章详情（公开端草稿返回404，管理端可查看任意状态）
      */
     @GetMapping("/article/{id}")
     public ApiResponse<Article> getArticle(@PathVariable Long id) {
-        return ApiResponse.ok(contentService.getArticle(id));
+        Article article = contentService.getArticle(id);
+        boolean isAdmin = false;
+        try { isAdmin = cn.dev33.satoken.stp.StpUtil.hasPermission("admin:user:list"); } catch (Exception ignored) {}
+        if (!isAdmin && (article.getStatus() == null || article.getStatus() != 1)) {
+            throw new IllegalArgumentException("文章不存在");
+        }
+        return ApiResponse.ok(article);
     }
 
     /**

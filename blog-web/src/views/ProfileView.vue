@@ -198,8 +198,10 @@ const save = async () => {
   font-size: clamp(38px, 5vw, 56px);
   line-height: 1.1;
   letter-spacing: .03em;
+  color: rgba(255, 255, 255, 0.98);
+  text-shadow: 0 4px 18px rgba(0, 0, 0, 0.38);
 }
-.sub { margin: 12px 0 0; color: rgba(255, 255, 255, 0.5); font-size: 16px; }
+.sub { margin: 12px 0 0; color: rgba(255, 255, 255, 0.72); font-size: 16px; }
 .hero-line { margin-top: 24px; width: 48px; height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--web-accent-3), var(--web-accent)); }
 
 .profile-card {
@@ -301,7 +303,7 @@ const save = async () => {
 .primary-btn:disabled { opacity: .5; cursor: not-allowed; }
 
 .divider { margin: 32px 0 24px; border: none; border-top: 1px solid var(--web-line); }
-.section-title { margin: 0 0 16px; font-size: 18px; color: rgba(255, 255, 255, 0.85); }
+.section-title { margin: 0 0 16px; font-size: 18px; color: rgba(255, 255, 255, 0.96); }
 .ghost-btn {
   padding: 12px 20px;
   background: rgba(255,255,255,0.7);

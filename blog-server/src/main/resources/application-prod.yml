@@ -2,17 +2,17 @@ spring:
   datasource:
     url: ${DB_URL:jdbc:mysql://localhost:3306/blog-system?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
     username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:}
+    password: ${DB_PASSWORD:198b07dcb7379fd9}
     driver-class-name: com.mysql.cj.jdbc.Driver
   data:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:26739}
-      password: ${REDIS_PASSWORD:}
+      password: ${REDIS_PASSWORD:JPAdGNRrBGN6yHZ7}
       database: 0
   ai:
     dashscope:
-      api-key: ${DASHSCOPE_API_KEY:}
+      api-key: ${DASHSCOPE_API_KEY:sk-b7b3fb1052354fa59a34816df1e0306d}
       chat:
         options:
           model: qwen-max
@@ -22,7 +22,7 @@ springdoc:
     enabled: false
 
 sa-token:
-  jwt-secret-key: ${JWT_SECRET:}
+  jwt-secret-key: ${JWT_SECRET:blog-system-secret-key-change-me}
 
 blog:
   upload:

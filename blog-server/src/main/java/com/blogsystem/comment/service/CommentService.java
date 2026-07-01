@@ -7,8 +7,11 @@ import com.blogsystem.auth.entity.SysUser;
 import com.blogsystem.auth.mapper.SysUserMapper;
 import com.blogsystem.comment.dto.CommentSaveRequest;
 import com.blogsystem.comment.dto.CommentVO;
+import com.blogsystem.common.RedisFailurePolicy;
 import com.blogsystem.comment.entity.Comment;
 import com.blogsystem.comment.mapper.CommentMapper;
+import com.blogsystem.content.entity.Article;
+import com.blogsystem.content.mapper.ArticleMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -26,7 +29,9 @@ public class CommentService {
 
     private final CommentMapper commentMapper;
     private final SysUserMapper sysUserMapper;
+    private final ArticleMapper articleMapper;
     private final StringRedisTemplate redisTemplate;
+    private final RedisFailurePolicy redisFailurePolicy;
 
     /**
      * 发表评论
@@ -35,17 +40,52 @@ public class CommentService {
         // 评论频率限制：每用户每分钟最多 3 条
         Long userId = StpUtil.getLoginIdAsLong();
         String rateKey = "rate:comment:user:" + userId;
-        String count = redisTemplate.opsForValue().get(rateKey);
-        if (count != null && Integer.parseInt(count) >= 3) {
-            throw new IllegalArgumentException("评论过于频繁，请稍后再试");
+        try {
+            String count = redisTemplate.opsForValue().get(rateKey);
+            if (count != null && Integer.parseInt(count) >= 3) {
+                throw new IllegalArgumentException("评论过于频繁，请稍后再试");
+            }
+        } catch (IllegalArgumentException e) {
+            throw e; // Business rejection — re-throw
+        } catch (Exception e) {
+            redisFailurePolicy.onSecurityReadFailure("comment rate check", rateKey, e);
         }
-        redisTemplate.opsForValue().increment(rateKey);
-        redisTemplate.expire(rateKey, Duration.ofMinutes(1));
+        // Record rate limit (best-effort)
+        try {
+            redisTemplate.opsForValue().increment(rateKey);
+            redisTemplate.expire(rateKey, Duration.ofMinutes(1));
+        } catch (Exception e) {
+            redisFailurePolicy.onSecurityWriteFailure("comment rate set", rateKey, e);
+        }
+
+        // 校验文章是否存在、已发布、允许评论
+        Article article = articleMapper.selectById(request.articleId());
+        if (article == null) {
+            throw new IllegalArgumentException("文章不存在");
+        }
+        if (article.getStatus() == null || article.getStatus() != 1) {
+            throw new IllegalArgumentException("文章未发布，无法评论");
+        }
+        if (article.getIsCommentEnabled() == null || article.getIsCommentEnabled() != 1) {
+            throw new IllegalArgumentException("文章已关闭评论");
+        }
+
+        // 如果是回复，校验父评论存在且属于同一文章
+        Long parentId = request.parentId() == null ? 0L : request.parentId();
+        if (parentId > 0) {
+            Comment parent = commentMapper.selectById(parentId);
+            if (parent == null || parent.getDeleted() == 1) {
+                throw new IllegalArgumentException("父评论不存在");
+            }
+            if (!parent.getArticleId().equals(request.articleId())) {
+                throw new IllegalArgumentException("父评论不属于该文章");
+            }
+        }
 
         Comment comment = new Comment();
         comment.setArticleId(request.articleId());
         comment.setUserId(userId);
-        comment.setParentId(request.parentId() == null ? 0L : request.parentId());
+        comment.setParentId(parentId);
         comment.setReplyToUserId(request.replyToUserId());
         comment.setContent(request.content());
         comment.setStatus(1);

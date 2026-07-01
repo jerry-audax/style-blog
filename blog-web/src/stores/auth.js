@@ -6,16 +6,23 @@ export const useAuthStore = defineStore('auth', () => {
   const token = ref(localStorage.getItem('blog_token') || '')
   const user = ref(null)
   const loading = ref(false)
+  const initialized = ref(false)
 
   const isLoggedIn = computed(() => !!token.value)
 
   async function fetchMe() {
-    if (!token.value) return
+    if (!token.value) {
+      initialized.value = true
+      return
+    }
     try {
       user.value = await me()
     } catch {
       token.value = ''
+      user.value = null
       localStorage.removeItem('blog_token')
+    } finally {
+      initialized.value = true
     }
   }
 
@@ -64,5 +71,5 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('blog_token')
   }
 
-  return { token, user, loading, isLoggedIn, fetchMe, login, loginByPassword, register, logout }
+  return { token, user, loading, initialized, isLoggedIn, fetchMe, login, loginByPassword, register, logout }
 })

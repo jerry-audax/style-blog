@@ -1,52 +1,53 @@
 package com.blogsystem.ai.config;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.blogsystem.ai.memory.RedisChatMemory;
-import com.blogsystem.content.entity.Article;
-import com.blogsystem.content.mapper.ArticleMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.memory.ChatMemory;
-import org.springframework.ai.document.Document;
 import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.SimpleVectorStore;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.io.File;
 
+/**
+ * AI 配置 —— VectorStore 非阻塞初始化。
+ * VectorStore bean 立即创建（尝试从持久化文件加载），
+ * 文章向量化由 {@link VectorStoreInitializer} 在应用启动后异步完成。
+ */
 @Slf4j
 @Configuration
 public class AiConfig {
+
+    /** 向量存储持久化文件路径 */
+    public static final String VECTOR_STORE_FILE = "data/vector-store.json";
 
     @Bean
     public ChatMemory chatMemory(StringRedisTemplate redisTemplate) {
         return new RedisChatMemory(redisTemplate);
     }
 
+    /**
+     * VectorStore bean —— 立即创建并返回（非阻塞）。
+     * 优先从持久化文件加载已有向量数据，文件不存在则创建空 store。
+     * 文章向量化由 VectorStoreInitializer 异步完成，不阻塞应用启动。
+     */
     @Bean
-    public VectorStore vectorStore(EmbeddingModel embeddingModel, ArticleMapper articleMapper) {
+    public VectorStore vectorStore(EmbeddingModel embeddingModel) {
         SimpleVectorStore store = SimpleVectorStore.builder(embeddingModel).build();
-        List<Article> articles = articleMapper.selectList(
-                new LambdaQueryWrapper<Article>().eq(Article::getDeleted, 0)
-                        .eq(Article::getStatus, 1));
-        List<Document> allChunks = new ArrayList<>();
-        for (Article a : articles) {
-            if (a.getContentMd() == null || a.getContentMd().length() < 100) continue;
-            Document doc = new Document(a.getContentMd(),
-                    Map.of("articleId", String.valueOf(a.getId()),
-                           "title", a.getTitle() != null ? a.getTitle() : ""));
-            TokenTextSplitter splitter = new TokenTextSplitter(200, 200, 50, 1, true);
-            allChunks.addAll(splitter.apply(List.of(doc)));
-        }
-        if (!allChunks.isEmpty()) {
-            store.add(allChunks);
-            log.info("Loaded {} document chunks from {} articles into VectorStore",
-                    allChunks.size(), articles.size());
+        File persistFile = new File(VECTOR_STORE_FILE);
+        if (persistFile.exists()) {
+            try {
+                store.load(persistFile);
+                log.info("VectorStore loaded from persisted file: {} ({} bytes)",
+                        VECTOR_STORE_FILE, persistFile.length());
+            } catch (Exception e) {
+                log.warn("Failed to load VectorStore from file {}, starting with empty store", VECTOR_STORE_FILE, e);
+            }
+        } else {
+            log.info("No persisted VectorStore file found, starting with empty store");
         }
         return store;
     }

@@ -8,6 +8,7 @@ import com.blogsystem.comment.dto.CommentVO;
 import com.blogsystem.comment.entity.Comment;
 import com.blogsystem.comment.service.CommentService;
 import com.blogsystem.common.ApiResponse;
+import com.blogsystem.common.PageUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -53,6 +54,8 @@ public class CommentController {
     public ApiResponse<Page<Comment>> adminList(@RequestParam(required = false) Integer status,
                                                 @RequestParam(defaultValue = "1") Long pageNum,
                                                 @RequestParam(defaultValue = "10") Long pageSize) {
+        pageNum = PageUtil.clampPageNum(pageNum);
+        pageSize = PageUtil.clampPageSize(pageSize);
         return ApiResponse.ok(commentService.adminList(status, pageNum, pageSize));
     }
 

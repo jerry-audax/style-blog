@@ -21,9 +21,21 @@ public class WebMvcConfig implements WebMvcConfigurer {
         registry.addInterceptor(new SaInterceptor())
                 .addPathPatterns("/**")
                 .excludePathPatterns("/uploads/**");
+
         registry.addInterceptor(new TokenRedisInterceptor())
                 .addPathPatterns("/api/**")
-                .excludePathPatterns("/api/auth/login", "/api/auth/sms-code");
+                .excludePathPatterns(
+                        // 认证相关公开接口
+                        "/api/auth/login",
+                        "/api/auth/login/password",
+                        "/api/auth/register",
+                        "/api/auth/password/reset",
+                        "/api/auth/sms-code",
+                        // 公开的文章接口
+                        "/api/article/list",
+                        "/api/article/hot",
+                        "/api/article/*"
+                );
     }
 
     @Override

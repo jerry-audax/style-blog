@@ -5,6 +5,7 @@ import com.blogsystem.auth.dto.LoginUserVO;
 import com.blogsystem.auth.dto.PasswordLoginRequest;
 import com.blogsystem.auth.dto.PhoneCodeAuthRequest;
 import com.blogsystem.auth.dto.ResetPasswordRequest;
+import com.blogsystem.common.RedisFailurePolicy;
 import com.blogsystem.auth.dto.SendSmsCodeRequest;
 import com.blogsystem.auth.entity.SmsCodeLog;
 import com.blogsystem.auth.entity.SysRole;
@@ -42,6 +43,7 @@ public class AuthService {
     private final SysRoleMapper sysRoleMapper;
     private final SysUserRoleMapper sysUserRoleMapper;
     private final StringRedisTemplate redisTemplate;
+    private final RedisFailurePolicy redisFailurePolicy;
     private final LoginLogMapper loginLogMapper;
     private final HttpServletRequest httpServletRequest;
 
@@ -51,22 +53,36 @@ public class AuthService {
     public Map<String, String> sendSmsCode(SendSmsCodeRequest request, String requestIp) {
         // 频率限制：同手机号 60s 内只能发 1 次
         String phoneKey = "sms:phone:" + request.phone();
-        if (Boolean.TRUE.equals(redisTemplate.hasKey(phoneKey))) {
-            throw new IllegalArgumentException("验证码已发送，请 60 秒后再试");
-        }
-        // 频率限制：同 IP 每天最多 10 次
         String ipKey = "sms:ip:" + requestIp;
-        String ipCount = redisTemplate.opsForValue().get(ipKey);
-        if (ipCount != null && Integer.parseInt(ipCount) >= 10) {
-            throw new IllegalArgumentException("今日验证码发送次数已达上限");
+        try {
+            if (Boolean.TRUE.equals(redisTemplate.hasKey(phoneKey))) {
+                throw new IllegalArgumentException("验证码已发送，请 60 秒后再试");
+            }
+            // 频率限制：同 IP 每天最多 10 次
+            String ipCount = redisTemplate.opsForValue().get(ipKey);
+            if (ipCount != null && Integer.parseInt(ipCount) >= 10) {
+                throw new IllegalArgumentException("今日验证码发送次数已达上限");
+            }
+        } catch (IllegalArgumentException e) {
+            throw e; // Business rejection — re-throw
+        } catch (Exception e) {
+            redisFailurePolicy.onSecurityReadFailure("SMS rate limit check", phoneKey + "/" + ipKey, e);
         }
 
         String code = String.valueOf(ThreadLocalRandom.current().nextInt(100000, 1000000));
 
-        // 记录频率
-        redisTemplate.opsForValue().set(phoneKey, "1", Duration.ofSeconds(60));
-        redisTemplate.opsForValue().increment(ipKey);
-        redisTemplate.expire(ipKey, Duration.ofDays(1));
+        // 记录频率（best-effort, Redis 不可用时跳过）
+        try {
+            redisTemplate.opsForValue().set(phoneKey, "1", Duration.ofSeconds(60));
+        } catch (Exception e) {
+            redisFailurePolicy.onSecurityWriteFailure("SMS phone rate set", phoneKey, e);
+        }
+        try {
+            redisTemplate.opsForValue().increment(ipKey);
+            redisTemplate.expire(ipKey, Duration.ofDays(1));
+        } catch (Exception e) {
+            redisFailurePolicy.onSecurityWriteFailure("SMS IP rate set", ipKey, e);
+        }
         SmsCodeLog log = new SmsCodeLog();
         log.setPhone(request.phone());
         log.setBizType(request.bizType());
@@ -131,12 +147,23 @@ public class AuthService {
     public LoginUserVO loginByPhoneCode(PhoneCodeAuthRequest request) {
         // 登录频率限制：每 IP 每分钟最多 5 次
         String loginRateKey = "rate:login:ip:" + httpServletRequest.getRemoteAddr();
-        String count = redisTemplate.opsForValue().get(loginRateKey);
-        if (count != null && Integer.parseInt(count) >= 5) {
-            throw new IllegalArgumentException("登录尝试过于频繁，请稍后再试");
+        try {
+            String count = redisTemplate.opsForValue().get(loginRateKey);
+            if (count != null && Integer.parseInt(count) >= 5) {
+                throw new IllegalArgumentException("登录尝试过于频繁，请稍后再试");
+            }
+        } catch (IllegalArgumentException e) {
+            throw e; // Business rejection — re-throw
+        } catch (Exception e) {
+            redisFailurePolicy.onSecurityReadFailure("login rate check", loginRateKey, e);
         }
-        redisTemplate.opsForValue().increment(loginRateKey);
-        redisTemplate.expire(loginRateKey, Duration.ofMinutes(1));
+        // Record rate limit (best-effort)
+        try {
+            redisTemplate.opsForValue().increment(loginRateKey);
+            redisTemplate.expire(loginRateKey, Duration.ofMinutes(1));
+        } catch (Exception e) {
+            redisFailurePolicy.onSecurityWriteFailure("login rate set", loginRateKey, e);
+        }
 
         verifyCode(request.phone(), "LOGIN", request.code());
         SysUser user = sysUserMapper.selectOne(new LambdaQueryWrapper<SysUser>()
@@ -161,12 +188,22 @@ public class AuthService {
     public LoginUserVO loginByPassword(PasswordLoginRequest request) {
         // 登录频率限制
         String loginRateKey = "rate:login:ip:" + httpServletRequest.getRemoteAddr();
-        String count = redisTemplate.opsForValue().get(loginRateKey);
-        if (count != null && Integer.parseInt(count) >= 5) {
-            throw new IllegalArgumentException("登录尝试过于频繁，请稍后再试");
+        try {
+            String count = redisTemplate.opsForValue().get(loginRateKey);
+            if (count != null && Integer.parseInt(count) >= 5) {
+                throw new IllegalArgumentException("登录尝试过于频繁，请稍后再试");
+            }
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            redisFailurePolicy.onSecurityReadFailure("login rate check", loginRateKey, e);
         }
-        redisTemplate.opsForValue().increment(loginRateKey);
-        redisTemplate.expire(loginRateKey, Duration.ofMinutes(1));
+        try {
+            redisTemplate.opsForValue().increment(loginRateKey);
+            redisTemplate.expire(loginRateKey, Duration.ofMinutes(1));
+        } catch (Exception e) {
+            redisFailurePolicy.onSecurityWriteFailure("login rate set", loginRateKey, e);
+        }
 
         SysUser user = sysUserMapper.selectOne(new LambdaQueryWrapper<SysUser>()
                 .eq(SysUser::getPhone, request.phone())

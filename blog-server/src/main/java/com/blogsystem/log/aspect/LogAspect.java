@@ -54,11 +54,30 @@ public class LogAspect {
         } catch (Exception ignored) {
         }
 
-        Object result = point.proceed();
-
+        // Try to proceed; record failure log on exception then re-throw
+        Object result;
         try {
-            operationLogMapper.insert(log);
-        } catch (Exception ignored) {
+            result = point.proceed();
+            // Success
+            log.setContent(annotation.module() + "-" + annotation.action());
+            try {
+                operationLogMapper.insert(log);
+            } catch (Exception ignored) {
+            }
+        } catch (Throwable e) {
+            // Record failure log before re-throwing
+            String errorMsg = e.getMessage();
+            if (errorMsg == null) errorMsg = "(无错误信息)";
+            if (errorMsg.length() > 200) errorMsg = errorMsg.substring(0, 200);
+            String content = "[FAIL] " + annotation.module() + "-" + annotation.action()
+                    + ": " + e.getClass().getSimpleName() + " - " + errorMsg;
+            if (content.length() > 500) content = content.substring(0, 500);
+            log.setContent(content);
+            try {
+                operationLogMapper.insert(log);
+            } catch (Exception ignored) {
+            }
+            throw e;
         }
 
         return result;

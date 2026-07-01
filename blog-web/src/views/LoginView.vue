@@ -1,5 +1,5 @@
 <template>
-  <section class="page">
+  <section class="page" :style="pageStyle">
     <div class="auth-card">
       <div class="auth-intro">
         <span class="intro-icon">&#9670;</span>
@@ -122,10 +122,15 @@ import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { sendCode, resetPassword } from '../api'
+import { webAssets } from '../config/assets'
 
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
+const assets = webAssets
+const pageStyle = {
+  '--web-login-bg': `url(${assets.backgrounds.login})`
+}
 
 const mode = ref('sms')
 const phone = ref('')
@@ -219,7 +224,7 @@ const doResetPassword = async () => {
   align-items: center;
   justify-content: center;
   padding: 72px 24px 40px;
-  background: url('https://w.wallhaven.cc/full/9o/wallhaven-9or96k.jpg') center / cover no-repeat;
+  background: var(--web-login-bg) center / cover no-repeat;
   z-index: 0;
 }
 /* 遮罩让卡片可读 */
@@ -227,7 +232,10 @@ const doResetPassword = async () => {
   content: '';
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background:
+    linear-gradient(135deg, rgba(8, 12, 24, 0.74), rgba(8, 12, 24, 0.38)),
+    radial-gradient(circle at top left, rgba(240, 140, 160, 0.12), transparent 30%),
+    radial-gradient(circle at bottom right, rgba(74, 144, 217, 0.10), transparent 26%);
   z-index: 0;
 }
 .page > * { position: relative; z-index: 1; }
@@ -237,29 +245,34 @@ const doResetPassword = async () => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0;
-  background: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(10, 14, 24, 0.42);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: var(--web-radius);
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.36);
   overflow: hidden;
 }
 
 .auth-intro {
   padding: 48px 40px;
-  background: rgba(0, 0, 0, 0.15);
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
+  border-right: 1px solid rgba(255, 255, 255, 0.10);
   display: flex;
   flex-direction: column;
   justify-content: center;
 }
-.intro-icon { font-size: 36px; color: rgba(255, 255, 255, 0.7); margin-bottom: 18px; }
+.intro-icon {
+  font-size: 36px;
+  color: rgba(255, 255, 255, 0.82);
+  margin-bottom: 18px;
+  text-shadow: 0 0 16px rgba(255, 255, 255, 0.18);
+}
 .eyebrow {
   margin: 0;
   font-size: 12px;
   letter-spacing: .16em;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.62);
 }
 .auth-intro h1 {
   margin: 10px 0 16px;
@@ -267,21 +280,29 @@ const doResetPassword = async () => {
   font-size: 42px;
   line-height: 1.1;
   letter-spacing: .03em;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.98);
+  text-shadow: 0 3px 18px rgba(0, 0, 0, 0.42);
 }
 .lead {
   margin: 0 0 28px;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.78);
   font-size: 16px;
   line-height: 1.75;
 }
 
 .feature-list { display: flex; flex-direction: column; gap: 12px; }
-.feature-item { display: flex; align-items: center; gap: 10px; font-size: 15px; color: rgba(255, 255, 255, 0.7); }
+.feature-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.82);
+}
 .feature-dot {
   width: 8px; height: 8px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.5);
+  background: var(--web-accent-3);
+  box-shadow: 0 0 10px rgba(240, 140, 160, 0.45);
   flex-shrink: 0;
 }
 
@@ -301,34 +322,41 @@ const doResetPassword = async () => {
   flex: 1;
   padding: 12px;
   font-size: 15px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.74);
   cursor: pointer;
   border-radius: 999px;
   transition: all .22s ease;
 }
-.tab-btn.active { background: rgba(255, 255, 255, 0.9); color: #1a1a2e; border-color: transparent; font-weight: 700; }
-.tab-btn:not(.active):hover { color: rgba(255, 255, 255, 0.9); border-color: rgba(255, 255, 255, 0.4); }
+.tab-btn.active {
+  background: rgba(255, 255, 255, 0.94);
+  color: #1a1a2e;
+  border-color: transparent;
+  font-weight: 800;
+  box-shadow: 0 10px 24px rgba(255, 255, 255, 0.12);
+}
+.tab-btn:not(.active):hover { color: rgba(255, 255, 255, 0.96); border-color: rgba(255, 255, 255, 0.42); }
 
 .field-stack { display: flex; flex-direction: column; gap: 6px; }
 label { font-size: 13px; color: rgba(255, 255, 255, 0.6); letter-spacing: .06em; }
+label { font-size: 13px; color: rgba(255, 255, 255, 0.7); letter-spacing: .08em; }
 
 input {
   width: 100%;
   padding: 14px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.09);
+  color: rgba(255, 255, 255, 0.96);
   font-size: 16px;
   border-radius: var(--web-radius);
   transition: border-color .18s ease, background .18s ease;
 }
-input::placeholder { color: rgba(255, 255, 255, 0.3); }
+input::placeholder { color: rgba(255, 255, 255, 0.38); }
 input:focus {
   outline: none;
-  border-color: rgba(255, 255, 255, 0.4);
-  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.44);
+  background: rgba(255, 255, 255, 0.13);
 }
 
 .code-row { display: flex; gap: 10px; }
@@ -336,51 +364,51 @@ input:focus {
 
 .send-btn {
   padding: 14px 18px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(255, 255, 255, 0.86);
   font-size: 14px;
   cursor: pointer;
   white-space: nowrap;
   border-radius: 999px;
   transition: all .22s ease;
 }
-.send-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.2); color: #fff; }
+.send-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.18); color: #fff; }
 .send-btn:disabled { opacity: .4; cursor: not-allowed; }
 
 .submit-btn {
   padding: 16px;
-  background: rgba(255, 255, 255, 0.9);
+  background: linear-gradient(135deg, rgba(255,255,255,0.96), rgba(255,255,255,0.88));
   color: #1a1a2e;
   font-size: 17px;
   font-weight: 700;
   border: none;
   cursor: pointer;
   border-radius: 999px;
-  transition: all .22s ease;
+  transition: transform .22s ease, box-shadow .22s ease, background .22s ease;
 }
-.submit-btn:hover:not(:disabled) { background: #fff; transform: scale(1.02); }
+.submit-btn:hover:not(:disabled) { background: #fff; transform: scale(1.02); box-shadow: 0 16px 30px rgba(255, 255, 255, 0.16); }
 .submit-btn:disabled { opacity: .5; cursor: not-allowed; }
 
 .hint-box {
   padding: 14px 16px;
-  border-left: 4px solid rgba(255, 255, 255, 0.4);
-  background: rgba(255, 255, 255, 0.06);
+  border-left: 4px solid var(--web-accent-3);
+  background: rgba(255, 255, 255, 0.07);
   border-radius: var(--web-radius);
 }
-.hint-box span { display: block; font-size: 11px; letter-spacing: .12em; color: rgba(255, 255, 255, 0.4); }
-.hint-box strong { display: block; margin-top: 4px; font-size: 24px; color: rgba(255, 255, 255, 0.9); }
+.hint-box span { display: block; font-size: 11px; letter-spacing: .12em; color: rgba(255, 255, 255, 0.58); }
+.hint-box strong { display: block; margin-top: 4px; font-size: 24px; color: #fff; text-shadow: 0 0 10px rgba(255, 255, 255, 0.12); }
 
-.msg { margin: 0; font-size: 14px; color: rgba(255, 200, 150, 0.9); }
+.msg { margin: 0; font-size: 14px; color: rgba(255, 214, 178, 0.96); }
 .msg.error { color: rgba(255, 120, 100, 0.9); }
 
 .forgot-link { margin: 0; font-size: 14px; text-align: right; }
-.forgot-link a { color: rgba(255, 255, 255, 0.4); }
-.forgot-link a:hover { color: rgba(255, 255, 255, 0.8); }
+.forgot-link a { color: rgba(255, 255, 255, 0.58); }
+.forgot-link a:hover { color: rgba(255, 255, 255, 0.92); }
 
 .back-link { margin: 0; font-size: 14px; }
-.back-link a { color: rgba(255, 255, 255, 0.4); }
-.back-link a:hover { color: rgba(255, 255, 255, 0.8); }
+.back-link a { color: rgba(255, 255, 255, 0.58); }
+.back-link a:hover { color: rgba(255, 255, 255, 0.92); }
 
 /* 忘记密码弹窗 */
 .modal-overlay {
@@ -391,7 +419,7 @@ input:focus {
 }
 .modal-card {
   width: min(400px, 90vw);
-  background: rgba(30, 30, 50, 0.92);
+  background: rgba(16, 20, 34, 0.94);
   backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: var(--web-radius);
@@ -399,7 +427,7 @@ input:focus {
   display: flex; flex-direction: column; gap: 16px;
   box-shadow: 0 12px 40px rgba(0,0,0,.4);
 }
-.modal-card h3 { margin: 0; font-size: 20px; color: rgba(255, 255, 255, 0.9); }
+.modal-card h3 { margin: 0; font-size: 20px; color: rgba(255, 255, 255, 0.96); }
 
 @media (max-width: 700px) {
   .auth-card { grid-template-columns: 1fr; }

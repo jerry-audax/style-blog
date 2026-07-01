@@ -2,6 +2,7 @@ package com.blogsystem.content.service;
 
 import cn.dev33.satoken.stp.StpUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.blogsystem.content.dto.ArticleSaveRequest;
 import com.blogsystem.content.dto.CategorySaveRequest;
@@ -22,6 +23,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.blogsystem.common.RedisFailurePolicy;
 import com.vladsch.flexmark.html.HtmlRenderer;
 import com.vladsch.flexmark.parser.Parser;
 import com.vladsch.flexmark.util.data.MutableDataSet;
@@ -41,13 +43,25 @@ public class ContentService {
     private final CategoryMapper categoryMapper;
     private final TagMapper tagMapper;
     private final StringRedisTemplate redisTemplate;
+    private final RedisFailurePolicy redisFailurePolicy;
 
     private static final String HOT_ZSET = "cache:hotArticles";
     private static final String LIKE_ZSET = "cache:hotByLikes";
 
+    /**
+     * Clear hot article caches. CACHE scenario — degrade gracefully on Redis failure.
+     */
     private void clearHotCache() {
-        redisTemplate.delete(HOT_ZSET);
-        redisTemplate.delete(LIKE_ZSET);
+        try {
+            redisTemplate.delete(HOT_ZSET);
+        } catch (Exception e) {
+            redisFailurePolicy.onCacheFailure("delete hotArticles ZSet", HOT_ZSET, e);
+        }
+        try {
+            redisTemplate.delete(LIKE_ZSET);
+        } catch (Exception e) {
+            redisFailurePolicy.onCacheFailure("delete hotByLikes ZSet", LIKE_ZSET, e);
+        }
     }
 
     @Transactional
@@ -152,23 +166,27 @@ public class ContentService {
 
 
     public List<Article> listHotArticles(long limit) {
-        // 从点赞 ZSet 取 top N，先按 isTop 再按 likeCount 降序
-        Set<String> topIds = redisTemplate.opsForZSet().reverseRange(LIKE_ZSET, 0, limit - 1);
-        if (topIds != null && !topIds.isEmpty()) {
-            List<Long> ids = topIds.stream().map(Long::valueOf).collect(Collectors.toList());
-            List<Article> articles = articleMapper.selectBatchIds(ids);
-            articles.sort((a, b) -> {
-                int topCmp = Integer.compare(
-                        b.getIsTop() == null ? 0 : b.getIsTop(),
-                        a.getIsTop() == null ? 0 : a.getIsTop());
-                if (topCmp != 0) return topCmp;
-                return Integer.compare(
-                        b.getLikeCount() == null ? 0 : b.getLikeCount(),
-                        a.getLikeCount() == null ? 0 : a.getLikeCount());
-            });
-            return articles;
+        // Try to get top N from the hot-by-likes ZSet (CACHE — degrade to DB on failure)
+        try {
+            Set<String> topIds = redisTemplate.opsForZSet().reverseRange(LIKE_ZSET, 0, limit - 1);
+            if (topIds != null && !topIds.isEmpty()) {
+                List<Long> ids = topIds.stream().map(Long::valueOf).collect(Collectors.toList());
+                List<Article> articles = articleMapper.selectBatchIds(ids);
+                articles.sort((a, b) -> {
+                    int topCmp = Integer.compare(
+                            b.getIsTop() == null ? 0 : b.getIsTop(),
+                            a.getIsTop() == null ? 0 : a.getIsTop());
+                    if (topCmp != 0) return topCmp;
+                    return Integer.compare(
+                            b.getLikeCount() == null ? 0 : b.getLikeCount(),
+                            a.getLikeCount() == null ? 0 : a.getLikeCount());
+                });
+                return articles;
+            }
+        } catch (Exception e) {
+            redisFailurePolicy.onCacheFailure("reverseRange hotByLikes", LIKE_ZSET, e);
         }
-        // 缓存未命中 → 查库并重建点赞 ZSet
+        // Cache miss or Redis failure → fall back to DB query and rebuild ZSet
         List<Article> list = articleMapper.selectList(new LambdaQueryWrapper<Article>().eq(Article::getDeleted, 0)
                 .eq(Article::getStatus, 1)
                 .orderByDesc(Article::getIsTop)
@@ -176,9 +194,15 @@ public class ContentService {
                 .orderByDesc(Article::getPublishTime)
                 .orderByDesc(Article::getId)
                 .last("limit " + limit));
+        // Rebuild ZSet (best-effort, failure is non-critical)
         for (Article a : list) {
-            redisTemplate.opsForZSet().add(LIKE_ZSET, String.valueOf(a.getId()),
-                    a.getLikeCount() == null ? 0 : a.getLikeCount());
+            try {
+                redisTemplate.opsForZSet().add(LIKE_ZSET, String.valueOf(a.getId()),
+                        a.getLikeCount() == null ? 0 : a.getLikeCount());
+            } catch (Exception e) {
+                redisFailurePolicy.onCacheFailure("rebuild hotByLikes ZSet add", LIKE_ZSET, e);
+                break; // If one fails, the rest will likely fail too
+            }
         }
         return list;
     }
@@ -188,11 +212,18 @@ public class ContentService {
         if (article == null || article.getDeleted() == 1) {
             throw new IllegalArgumentException("文章不存在");
         }
+        // Atomic: SET view_count = view_count + 1, avoids read-modify-write race
+        articleMapper.update(null, new LambdaUpdateWrapper<Article>()
+                .eq(Article::getId, id)
+                .setSql("view_count = view_count + 1"));
         int newCount = (article.getViewCount() == null ? 0 : article.getViewCount()) + 1;
         article.setViewCount(newCount);
-        articleMapper.updateById(article);
-        // 同步更新 ZSet 中的阅读量
-        redisTemplate.opsForZSet().add(HOT_ZSET, String.valueOf(id), newCount);
+        // Update hotArticles ZSet (CACHE — best-effort)
+        try {
+            redisTemplate.opsForZSet().add(HOT_ZSET, String.valueOf(id), newCount);
+        } catch (Exception e) {
+            redisFailurePolicy.onCacheFailure("update hotArticles ZSet viewCount", HOT_ZSET, e);
+        }
         return article;
     }
 
@@ -249,19 +280,35 @@ public class ContentService {
                 .eq(ArticleLike::getUserId, userId)
                 .last("limit 1"));
         if (exist != null) {
+            // Unlike: delete record + atomic decrement (floor at 0)
             articleLikeMapper.deleteById(exist.getId());
-            article.setLikeCount(Math.max(0, (article.getLikeCount() == null ? 0 : article.getLikeCount()) - 1));
-            articleMapper.updateById(article);
-            redisTemplate.opsForZSet().add(LIKE_ZSET, String.valueOf(articleId), article.getLikeCount());
+            articleMapper.update(null, new LambdaUpdateWrapper<Article>()
+                    .eq(Article::getId, articleId)
+                    .setSql("like_count = GREATEST(like_count - 1, 0)"));
+            int newLikeCount = Math.max(0, (article.getLikeCount() == null ? 0 : article.getLikeCount()) - 1);
+            // Update ZSet (CACHE — best-effort)
+            try {
+                redisTemplate.opsForZSet().add(LIKE_ZSET, String.valueOf(articleId), newLikeCount);
+            } catch (Exception e) {
+                redisFailurePolicy.onCacheFailure("toggleLike unlike ZSet update", LIKE_ZSET, e);
+            }
             return false;
         }
+        // Like: insert record + atomic increment
         ArticleLike like = new ArticleLike();
         like.setArticleId(articleId);
         like.setUserId(userId);
         articleLikeMapper.insert(like);
-        article.setLikeCount((article.getLikeCount() == null ? 0 : article.getLikeCount()) + 1);
-        articleMapper.updateById(article);
-        redisTemplate.opsForZSet().add(LIKE_ZSET, String.valueOf(articleId), article.getLikeCount());
+        articleMapper.update(null, new LambdaUpdateWrapper<Article>()
+                .eq(Article::getId, articleId)
+                .setSql("like_count = like_count + 1"));
+        int newLikeCount = (article.getLikeCount() == null ? 0 : article.getLikeCount()) + 1;
+        // Update ZSet (CACHE — best-effort)
+        try {
+            redisTemplate.opsForZSet().add(LIKE_ZSET, String.valueOf(articleId), newLikeCount);
+        } catch (Exception e) {
+            redisFailurePolicy.onCacheFailure("toggleLike like ZSet update", LIKE_ZSET, e);
+        }
         return true;
     }
 

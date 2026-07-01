@@ -1,9 +1,11 @@
 package com.blogsystem.ai.service;
 
 import cn.dev33.satoken.stp.StpUtil;
+import com.blogsystem.ai.config.VectorStoreInitializer;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
+import com.blogsystem.common.RedisFailurePolicy;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -17,6 +19,8 @@ public class AiService {
 
     private final ChatClient chatClient;
     private final StringRedisTemplate redisTemplate;
+    private final RedisFailurePolicy redisFailurePolicy;
+    private final VectorStoreInitializer vectorStoreInitializer;
 
     private static final String SYSTEM_PROMPT = """
             你是 Javerry 博客的 AI 技术助手，名字叫「小J」。
@@ -33,8 +37,11 @@ public class AiService {
             """;
 
     public AiService(ChatClient.Builder builder, ChatMemory chatMemory, VectorStore vectorStore,
-                      StringRedisTemplate redisTemplate) {
+                      StringRedisTemplate redisTemplate, RedisFailurePolicy redisFailurePolicy,
+                      VectorStoreInitializer vectorStoreInitializer) {
         this.redisTemplate = redisTemplate;
+        this.redisFailurePolicy = redisFailurePolicy;
+        this.vectorStoreInitializer = vectorStoreInitializer;
         this.chatClient = builder
                 .defaultSystem(SYSTEM_PROMPT)
                 .defaultAdvisors(
@@ -47,12 +54,23 @@ public class AiService {
         // AI 频率限制：每用户每小时最多 50 次
         Long userId = StpUtil.getLoginIdAsLong();
         String rateKey = "rate:ai:user:" + userId;
-        String count = redisTemplate.opsForValue().get(rateKey);
-        if (count != null && Integer.parseInt(count) >= 50) {
-            throw new IllegalArgumentException("AI 对话次数已达每小时上限，请稍后再试");
+        try {
+            String count = redisTemplate.opsForValue().get(rateKey);
+            if (count != null && Integer.parseInt(count) >= 50) {
+                throw new IllegalArgumentException("AI 对话次数已达每小时上限，请稍后再试");
+            }
+        } catch (IllegalArgumentException e) {
+            throw e; // Business rejection — re-throw
+        } catch (Exception e) {
+            redisFailurePolicy.onSecurityReadFailure("AI rate check", rateKey, e);
         }
-        redisTemplate.opsForValue().increment(rateKey);
-        redisTemplate.expire(rateKey, Duration.ofHours(1));
+        // Record rate limit (best-effort)
+        try {
+            redisTemplate.opsForValue().increment(rateKey);
+            redisTemplate.expire(rateKey, Duration.ofHours(1));
+        } catch (Exception e) {
+            redisFailurePolicy.onSecurityWriteFailure("AI rate set", rateKey, e);
+        }
 
         return chatClient
                 .prompt()
@@ -64,5 +82,15 @@ public class AiService {
 
     public void clearMemory(String chatId) {
         // 委托 Controller 中的 ChatMemory 直接操作（避免在 Service 层维护 ChatMemory 引用）
+    }
+
+    /**
+     * 重建向量存储：清空现有向量并重新加载所有已发布文章。
+     * 管理端调用，加载期间会跳过重复请求。
+     *
+     * @return 加载的文档块数量，-1 表示已有加载任务在进行中
+     */
+    public int rebuildVectors() {
+        return vectorStoreInitializer.rebuild();
     }
 }

@@ -77,12 +77,15 @@ public class FileService {
             md5 = DigestUtils.md5DigestAsHex(is);
         }
 
-        String url = (publicUrl != null && !publicUrl.isBlank() ? publicUrl : "")
-                + "/uploads/" + subDir + "/" + filename;
+        // 数据库中只存相对路径，避免域名变更导致旧记录不可用
+        String relativePath = "/uploads/" + subDir + "/" + filename;
+        // 返回给调用方时拼接完整 URL
+        String fullUrl = (publicUrl != null && !publicUrl.isBlank() ? publicUrl : "")
+                + relativePath;
 
         FileRecord record = new FileRecord();
         record.setFileName(original);
-        record.setFileUrl(url);
+        record.setFileUrl(relativePath);
         record.setFilePath(target.toString());
         record.setFileType(ext);
         record.setFileSize(file.getSize());
@@ -92,14 +95,17 @@ public class FileService {
         record.setCreatedAt(LocalDateTime.now());
         fileRecordMapper.insert(record);
 
-        return Map.of("url", url);
+        return Map.of("url", fullUrl);
     }
 
     public void deleteByUrl(String url) {
         if (url == null || !url.contains("/uploads/")) return;
 
+        // 兼容前端传入完整 URL 的情况：提取相对路径再查库
+        String relativeUrl = url.startsWith("http") ? url.replaceFirst("^https?://[^/]+", "") : url;
+
         FileRecord record = fileRecordMapper.selectOne(
-                new LambdaQueryWrapper<FileRecord>().eq(FileRecord::getFileUrl, url));
+                new LambdaQueryWrapper<FileRecord>().eq(FileRecord::getFileUrl, relativeUrl));
         if (record == null) return;
 
         try {
