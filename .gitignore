@@ -1,4 +1,6 @@
 .env
+.env.*
+*.env
 dist/
 uploads/
 node_modules/
@@ -7,3 +9,11 @@ target/
 .idea/
 
 docs/
+data/
+**/src/test/
+**/src/__tests__/
+*.key
+*.pem
+*.p12
+*.jks
+*.keystore
