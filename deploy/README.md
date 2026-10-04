@@ -1,6 +1,6 @@
 # Production deployment
 
-The production stack builds five images: the Spring Boot API, the publication worker, the public site, the admin site, and an internal Redis service. PostgreSQL is intentionally external and is never initialized by Compose.
+The production stack builds three application images: the Spring Boot API, the public Vue site, and the admin Vue site. The public image also runs the internal publication worker beside Nginx. Redis is an internal runtime service, and PostgreSQL is intentionally external and is never initialized by Compose.
 
 ## First deployment
 
@@ -34,7 +34,7 @@ docker compose --env-file deploy/.env \
   -f docker-compose.prod.yml -f docker-compose.host-gateway.yml up -d
 ```
 
-The override defaults to host ports `8080` (API), `8081` (publication worker), and `6380` (Redis). Change them with `BLOG_SERVER_PORT`, `BLOG_PUBLISHER_PORT`, and `BLOG_REDIS_PORT` in `deploy/.env` when needed.
+The override defaults to host ports `8080` (API), `8081` (publication worker inside the public image), and `6380` (Redis). Change them with `BLOG_SERVER_PORT`, `BLOG_PUBLICATION_PORT`, and `BLOG_REDIS_PORT` in `deploy/.env` in environments that need different ports.
 
 ## Upgrade and rollback
 

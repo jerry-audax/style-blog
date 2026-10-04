@@ -132,9 +132,9 @@ npm run build
 
 PUB-01 的最新验证为 94 项（62 Node + 32 Vitest）通过，完整构建及发布进程镜像构建成功；Windows 与 Linux 均从实际 API 生成了包含新图床封面的页面。详见 [执行记录](../docs/automatic-publication.md)。后面的日期段落保留对应历史结果，不代替此发布切片证据。
 
-blog-web 默认镜像提供 Nginx/Vue 资源；同 Dockerfile 的 publisher target 提供运行时 Hexo 发布进程。Nginx `/blog/` 代理它的不可变静态产物，缺失页面返回真实 404，不落入 SPA；API 反代，AI 路径保留 SSE 配置但服务禁用。内部控制路由不代理。HTML/API 不长期缓存。
+blog-web 默认镜像同时提供 Nginx/Vue 资源和运行时 Hexo 发布进程。Nginx `/blog/` 代理同一容器内的不可变静态产物，缺失页面返回真实 404，不落入 SPA；API 反代，AI 路径保留 SSE 配置但服务禁用。内部控制路由不代理。HTML/API 不长期缓存。
 
-构建设置真实 BLOG_SITE_URL。Jenkins 的 SYNC_BLOG_CONTENT 仅影响构建时离线快照；运行时 blog-publisher 使用公开 API 自动校验内容。生产为它和后端注入同一个至少 32 字符的 PUBLICATION_API_TOKEN，并挂载专用持久卷，内部端口不映射到宿主机。见 [自动发布配置与验收](../docs/automatic-publication.md)。
+构建设置真实 BLOG_SITE_URL。Jenkins 的 SYNC_BLOG_CONTENT 仅影响构建时离线快照；运行时发布进程使用公开 API 自动校验内容。生产为它和后端注入同一个至少 32 字符的 PUBLICATION_API_TOKEN，并挂载专用持久卷，发布端口只在容器网络内使用。见 [自动发布配置与验收](../docs/automatic-publication.md)。
 
 npm test 覆盖内容同步完整性/净化、真实隔离 Hexo 构建、Vue 只读边界、SSE、APlayer/生命周期/反馈、粒子和组件；测试内容不进入正式文章目录。
 
