@@ -25,6 +25,8 @@ The production stack builds three application images: the Spring Boot API, the p
 
 The public site is on `BLOG_HTTP_PORT` and the admin site is on `BLOG_ADMIN_PORT`. Only those two ports are published. The blog API and publication worker stay on the internal Compose network. Set `DB_URL` to a hostname reachable from a container; on Linux Docker hosts, `host.docker.internal` is provided by the Compose file.
 
+The supplied server uses its existing host Nginx on port 80 and proxies all public requests to `127.0.0.1:8088`. See `deploy/nginx-blog-system.conf.example` for the equivalent configuration. The admin site remains on `BLOG_ADMIN_PORT`.
+
 If the server blocks TCP between containers on a Docker bridge network, use the host-gateway override. It publishes the API, publication worker, and Redis on the host, then routes service traffic through `host.docker.internal`:
 
 ```bash
