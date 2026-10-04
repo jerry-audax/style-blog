@@ -119,7 +119,7 @@ snackbar: { enable: true }
 preloader: {
   enable: true,
   source: 1,
-  avatar: http://127.0.0.1:5173/blog/img/avatar.jpg
+  avatar: https://cloudflare-imgbed-6of.pages.dev/file/blog/avatars/4/1791131004977_avatar.jpg
 }
 visitorMail: { enable: false }
 accesskey: { enable: false }

@@ -7,7 +7,7 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-      database: ${REDIS_DATABASE:1}
+      database: ${REDIS_DATABASE:0}
   ai:
     dashscope:
       api-key: ${DASHSCOPE_API_KEY:}
@@ -21,4 +21,4 @@ publication:
   token-file: ${PUBLICATION_TOKEN_FILE:../blog-web/.runtime/publication.key}
 
 sa-token:
-  jwt-secret-key: ${SA_TOKEN_JWT_SECRET_KEY:${JWT_SECRET:}}
+  jwt-secret-key: ${SA_TOKEN_JWT_SECRET_KEY:}
