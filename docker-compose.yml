@@ -1,19 +1,4 @@
 services:
-  mysql:
-    image: mysql:8.0
-    environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
-      MYSQL_DATABASE: blog_system
-    volumes:
-      - mysql_data:/var/lib/mysql
-      - ./blog-server/src/main/resources/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
-    ports:
-      - "3306:3306"
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 5s
-      retries: 10
-
   redis:
     image: redis:7-alpine
     command: redis-server --port 6380
@@ -23,36 +8,82 @@ services:
   blog-server:
     build: ./blog-server
     depends_on:
-      mysql:
-        condition: service_healthy
       redis:
         condition: service_started
     ports:
       - "8080:8080"
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      DB_URL: jdbc:mysql://mysql:3306/blog_system?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
-      DB_USERNAME: root
+      AI_ENABLED: ${AI_ENABLED:-false}
+      BLOG_OWNER_PHONE: ${BLOG_OWNER_PHONE:-19140838906}
+      PUBLICATION_BASE_URL: http://blog-publisher:8081
+      PUBLICATION_API_TOKEN: ${PUBLICATION_API_TOKEN:?Configure a shared publication token of at least 32 characters}
+      MUSIC_PLAYLIST_ID: ${MUSIC_PLAYLIST_ID:-939817038}
+      MUSIC_STATE_DIRECTORY: /var/lib/blog-music
+      DB_URL: ${DB_URL:-jdbc:postgresql://host.docker.internal:5432/blog_system}
+      DB_USERNAME: ${DB_USERNAME:-postgres}
       DB_PASSWORD: ${DB_PASSWORD}
+      IMGBED_BASE_URL: ${IMGBED_BASE_URL:-https://cloudflare-imgbed-6of.pages.dev}
+      IMGBED_API_TOKEN: ${IMGBED_API_TOKEN:-}
+      IMGBED_UPLOAD_CHANNEL: ${IMGBED_UPLOAD_CHANNEL:-telegram}
+      IMGBED_CHANNEL_NAME: ${IMGBED_CHANNEL_NAME:-TelegramBot}
+      IMGBED_ROOT_FOLDER: ${IMGBED_ROOT_FOLDER:-blog}
       REDIS_HOST: redis
       REDIS_PORT: 6380
       JWT_SECRET: ${JWT_SECRET}
-      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
-      BLOG_UPLOAD_DIR: /app/uploads
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
-      - uploads:/app/uploads
+      - ${MUSIC_STATE_HOST_DIRECTORY:-./data/music-docker}:/var/lib/blog-music
+
+  blog-ai:
+    build: ./blog-ai
+    profiles: [ ai ]
+    depends_on:
+      redis:
+        condition: service_started
+    ports:
+      - "8090:8090"
+    environment:
+      AI_SERVER_PORT: 8090
+      SPRING_PROFILES_ACTIVE: ${AI_SPRING_PROFILES_ACTIVE:-default}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      REDIS_HOST: redis
+      REDIS_PORT: 6380
+
+  blog-publisher:
+    build:
+      context: ./blog-web
+      target: publisher
+      args:
+        BLOG_SITE_URL: ${BLOG_SITE_URL:-http://localhost/blog}
+    environment:
+      BLOG_API_URL: http://blog-server:8080
+      BLOG_SITE_URL: ${BLOG_SITE_URL:-http://localhost/blog}
+      PUBLICATION_API_TOKEN: ${PUBLICATION_API_TOKEN:?Configure a shared publication token of at least 32 characters}
+      PUBLICATION_STATE_DIRECTORY: /var/lib/blog-publication
+      PUBLICATION_PORT: 8081
+    volumes:
+      - blog-publication:/var/lib/blog-publication
+    depends_on:
+      - blog-server
 
   nginx:
     image: nginx:alpine
+    environment:
+      BACKEND_URL: http://blog-server:8080
+      PUBLICATION_URL: http://blog-publisher:8081
+      NGINX_ENVSUBST_VARS: '$$BACKEND_URL $$PUBLICATION_URL'
     ports:
       - "80:80"
     volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./blog-web/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ./blog-web/dist:/usr/share/nginx/html:ro
       - ./blog-admin/dist:/usr/share/nginx/html/admin:ro
     depends_on:
       - blog-server
+      - blog-publisher
 
 volumes:
-  mysql_data:
-  uploads:
+  blog-publication:

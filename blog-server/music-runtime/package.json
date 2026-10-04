@@ -1,0 +1,14 @@
+{
+  "name": "blog-music-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node --test *.test.cjs"
+  },
+  "dependencies": {
+    "@music163/ncm-cli": "0.1.7"
+  },
+  "engines": {
+    "node": ">=22.12"
+  }
+}

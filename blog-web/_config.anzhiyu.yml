@@ -1,0 +1,162 @@
+# Official npm theme, configured without modifying node_modules.
+menu:
+  主页:
+    归档: /archives/ || anzhiyu-icon-box-archive
+    分类: /categories/ || anzhiyu-icon-shapes
+    标签: /tags/ || anzhiyu-icon-tags
+  最新文章: /#recent-posts || anzhiyu-icon-book
+  我的:
+    音乐: /music/ || anzhiyu-icon-music
+  惊喜: /surprise/ || anzhiyu-icon-meteor
+  关于: /about/ || anzhiyu-icon-paper-plane
+nav:
+  enable: false
+  travelling: false
+  clock: false
+  menu: [ ]
+social: { }
+# Site branding and the author avatar are independent assets.
+favicon: /img/site-logo.jpg
+avatar:
+  img: /img/avatar.jpg
+  effect: false
+cover:
+  index_enable: true
+  aside_enable: true
+  archives_enable: true
+  position: left
+  default_cover: [ /img/javerry-sky.webp ]
+error_img:
+  flink: /img/site-logo.jpg
+  post_page: /img/javerry-sky.webp
+error_404:
+  enable: true
+  subtitle: 页面不存在，请返回博客首页。
+  background: /img/javerry-sky.webp
+home_top:
+  enable: true
+  title: 记录技术
+  subTitle: 保持好奇。
+  siteText: JAVERRY / TECH NOTES
+  default_descr: 技术学习、系统设计与开发实践
+  category:
+    - { name: 文章, path: /archives/, class: blue, icon: anzhiyu-icon-book, shadow: 'var(--anzhiyu-shadow-blue)' }
+    - { name: 分类, path: /categories/, class: red, icon: anzhiyu-icon-shapes, shadow: 'var(--anzhiyu-shadow-red)' }
+    - { name: 标签, path: /tags/, class: green, icon: anzhiyu-icon-tags, shadow: 'var(--anzhiyu-shadow-green)' }
+  swiper:
+    enable: true
+    swiper_css: /blog/pluginsSrc/anzhiyu-theme-static/swiper/swiper.min.css
+    swiper_js: /blog/pluginsSrc/anzhiyu-theme-static/swiper/swiper.min.js
+  banner:
+    tips: 技术与思考
+    title: 每一次探索，都值得记录。
+    image: /img/javerry-sky.webp
+    link: /archives/
+aside:
+  enable: true
+  position: right
+  mobile: true
+  card_author:
+    enable: true
+    description: 记录学习与实践，分享有用的技术思考。
+    name_link: /blog/about/
+  card_announcement:
+    enable: true
+    content: 记录技术学习、系统设计与开发实践。欢迎从最新文章开始阅读。
+  card_weixin: { enable: false }
+  card_webinfo: { enable: true, post_count: true, last_push_date: true }
+  card_categories: { enable: true }
+footer:
+  owner: { enable: true, since: 2026 }
+  custom_text: ''
+  runtime: { enable: false }
+comments: { use: [ ], count: false, card_post_count: false }
+local_search: { enable: true, preload: false }
+darkmode: { enable: true, button: true, autoChangeMode: false }
+display_mode: dark
+# Keep the installed theme's defaults for other options; own the site palette here.
+theme_color:
+  enable: true
+  main: "#4F46E5"
+  dark_main: "#A5B4FC"
+  paginator: "var(--anzhiyu-main)"
+  button_hover: "var(--anzhiyu-theme-deep)"
+  text_selection: "#4F46E5"
+  link_color: "var(--anzhiyu-main)"
+  meta_color: "var(--anzhiyu-secondtext)"
+  hr_color: "#4F46E523"
+  code_foreground: "var(--site-accent-foreground)"
+  toc_color: "var(--anzhiyu-main)"
+  meta_theme_color_light: "#f7f9fe"
+  meta_theme_color_dark: "#1b1722"
+pjax: { enable: true }
+peoplecanvas: { enable: false }
+universe: { enable: false }
+# One site-owned click effect; keep the theme's other click effects disabled.
+fireworks: { enable: false }
+click_heart: { enable: false }
+clickShowText: { enable: false }
+site_click_effect:
+  enable: true
+  colors: [ '#eb125f', '#6eff8a', '#6386ff', '#f9f383' ]
+  size: 30
+  maxCount: 30
+  duration: 1000
+  maxActiveBalls: 150
+nav_music:
+  enable: true
+  console_widescreen_music: false
+  id: '939817038'
+  server: netease
+  volume: 0.5
+  all_playlist: https://music.163.com/#/playlist?id=939817038
+aplayerInject: { enable: true, per_page: true }
+newest_comments: { enable: false }
+runtimeshow: { enable: false }
+translate: { enable: false }
+instantpage: false
+snackbar: { enable: true }
+preloader: {
+  enable: true,
+  source: 1,
+  avatar: http://127.0.0.1:5173/blog/img/avatar.jpg
+}
+visitorMail: { enable: false }
+accesskey: { enable: false }
+diytitle: { 
+  enable: true,
+  leaveTitle: w(ﾟДﾟ)w 不要走！再看看嘛！,
+  backTitle: ♪(^∇^*)欢迎肥来！
+}
+post_head_ai_description: { enable: false }
+mainTone: { enable: false, cover_change: false }
+site_verification: null
+rightClickMenu: { enable: true }
+centerConsole: { enable: true }
+console: { enable: false }
+fancybox: false
+medium_zoom: true
+lazyload: { enable: false }
+post_copyright:
+  enable: true
+  author_href: /blog/about/
+  copyright_author_link: /blog/about/
+  location: ''
+  license: 版权归作者所有，转载请先联系作者。
+  license_url: /blog/about/
+reward: { enable: false, QR_code: null }
+sharejs: { enable: false }
+inject:
+  head:
+    - '<link rel="stylesheet" href="/blog/css/site.css">'
+    - '<script>window.siteBackgroundVariant = "particles"</script>'
+    - '<script src="/blog/js/site-bridge.js"></script>'
+    - '<script defer src="/blog/js/site-music.js"></script>'
+    - '<script defer src="/blog/js/site-surprise.js"></script>'
+CDN:
+  internal_provider: local
+  third_party_provider: local
+  option:
+    pjax: /blog/pluginsSrc/pjax/pjax.min.js
+    aplayer_js: /blog/pluginsSrc/anzhiyu-blog-static/js/APlayer.min.js
+    meting_js: /blog/pluginsSrc/hexo-anzhiyu-music/assets/js/Meting2.min.js

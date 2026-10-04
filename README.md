@@ -1,221 +1,142 @@
 # Blog System
 
-个人博客系统，前后端分离架构。前端含公开浏览端（blog-web）与管理后台（blog-admin），后端为 Spring Boot 单体服务。
+个人技术博客：Hexo + 安知鱼原主题负责公开阅读，Vue 负责文章动态展示与独立管理后台，Spring Boot 提供业务 API。后端采用 DDD 模块化单体；独立 AI 服务保留，当前不启用。
+
+文档基线更新：2026-10-04。先看 [文档索引](docs/README.md)、[产品定位](docs/product-positioning-and-requirements.md) 和 [技术开发基线](docs/technical-development-baseline.md)。
 
 ## 项目结构
 
-```
+```text
 blog-system/
-├── blog-server/     Spring Boot 后端 (Java 17 / MyBatis-Plus / Sa-Token)
-├── blog-web/        Vue 3 公开博客前端 (Vite 5 / markdown-it)
-├── blog-admin/      Vue 3 管理后台 (Element Plus / Tiptap)
-├── docs/            项目文档
-│   ├── phase1-progress.md
-│   ├── phase2-progress.md
-│   ├── extend.md
-│   ├── ai-chat-module.md
-│   └── troubleshooting-and-lessons-learned.md
-└── README.md
+├── blog-server/     Spring Boot 业务服务，默认端口 8080
+├── blog-ai/         独立 AI/RAG 服务，暂不启用
+├── blog-web/        Hexo 技术博客 + Vue 只读动态组件
+├── blog-admin/      Vue 管理后台，仅单博主密码登录
+├── tools/           本地启动、数据库迁移和音频验证工具
+├── docs/            当前基线、实施记录、待办及必要历史资料
+├── pom.xml          后端多模块聚合构建
+├── Jenkinsfile      测试、打包、Docker 镜像构建与推送
+└── docker-compose.yml
 ```
 
-## 技术栈
+技术栈：Java 17、Spring Boot 3.3.2、MyBatis-Plus 3.5.7、Sa-Token 1.38.0、PostgreSQL、Redis；公开端 Hexo 8.1.2 / hexo-theme-anzhiyu 1.7.0 / Vue 3 / Vite 7，管理端 Vue 3 / Element Plus / Tiptap。公开端要求 Node.js >=22.12。
 
-| 层 | 技术 |
-|---|---|
-| 后端框架 | Spring Boot 3.3 + MyBatis-Plus 3.5 + Spring AOP |
-| 认证鉴权 | Sa-Token 1.38 (JWT + Redis 混合模式 / 13 条权限码 RBAC) |
-| 数据库 | MySQL 8.x |
-| 缓存 | Redis (热门文章 ZSet / 验证码限流 / AI 记忆 / 登录凭证) |
-| Markdown→HTML | Flexmark (后端) + markdown-it (前端) |
-| AI 对话 | Spring AI + DashScope Qwen-Max (SSE 流式 + RAG 博客知识库) |
-| API 文档 | Knife4j (/doc.html) |
-| 前端框架 | Vue 3 (Composition API) + Vue Router + Pinia |
-| 后台 UI | Element Plus |
-| 富文本编辑器 | Tiptap (WYSIWYG, 替代 ByTemd) |
-| 构建 | Vite 5 |
-| 部署 | Dockerfile + docker-compose (MySQL / Redis / blog-server / Nginx) |
+## 当前产品边界
 
-## 后端模块划分
+- 公开入口 `/` 跳转 `/blog/`；文章、归档、分类、标签、搜索、音乐和关于页使用原安知鱼主题，不保留独立作品集。
+- 访客只读，不提供博客登录、注册、资料编辑、发表评论或点赞写入。文章动态组件读取计数与已审核历史评论。
+- 管理端只允许 `BLOG_OWNER_PHONE` 指定的已有博主账号使用原密码登录。资料、头像、密码编辑统一在 `/account`；其他历史账号的数据不删除。
+- 后台 Tiptap 输出 HTML，数据库历史字段 `contentMd` 仍沿用原名；旧 Markdown 文章继续兼容。
+- 文章发布闭环为“后台保存 → 发布进程自动校验 → 隔离生成 Hexo → 切换公开页面”。管理端展示状态并可重试；日常内容更新不再手动构建镜像。详见 [自动发布](docs/automatic-publication.md)。外部 CDN 必须避免缓存旧 HTML。
+- 图片由 Cloudflare ImgBed 的 Telegram 渠道管理，Token 仅后端持有；不恢复本地文件模块、`/uploads` 或图片反代，不自动物理清理历史文件。
+- 音乐播放使用已导入图床的授权音频；网易云个人 CLI 仅同步歌单资料。不是网易云官方取流或社区 Meting 音源。
+- 默认深色，保留原组件和黑色半透明底板以透出粒子；浅色停用粒子。迷你圆盘只播放/暂停，进度操作位于音乐页。
+- AI 源码、依赖、聊天组件和历史数据保留，但默认关闭，不开放匿名模型调用。
 
-```
-com.blogsystem
-├── auth/            认证模块 (验证码 / 注册 / 登录 / 个人信息 / 改密)
-│   ├── controller/  AuthController
-│   ├── service/     AuthService
-│   ├── dto/         LoginUserVO, ProfileUpdateRequest, PasswordUpdateRequest
-│   ├── entity/      SysUser, SysRole, SysUserRole, SmsCodeLog
-│   └── mapper/      MyBatis-Plus Mapper
-├── admin/           管理端模块
-│   ├── controller/  AdminController (用户管理 / 日志查询)
-│   └── service/     AdminService
-├── content/         内容模块 (文章 / 分类 / 标签 / 热门文章 / 点赞)
-│   ├── controller/  ContentController
-│   ├── service/     ContentService
-│   ├── dto/         ArticleSaveRequest, CategorySaveRequest, TagSaveRequest
-│   ├── entity/      Article, Category, Tag, ArticleTag
-│   └── mapper/
-├── comment/         评论模块 (发表 / 回复 / 审核)
-│   ├── controller/  CommentController
-│   ├── service/     CommentService
-│   ├── dto/         CommentVO, CommentSaveRequest
-│   ├── entity/      Comment
-│   └── mapper/
-├── file/            文件模块 (上传 / 删除 / file_record 表)
-│   ├── controller/  FileController
-│   ├── service/     FileService
-│   ├── entity/      FileRecord
-│   └── mapper/      FileRecordMapper
-├── ai/              AI 模块 (SSE 流式对话 / RAG / Redis 记忆)
-│   ├── controller/  AiController
-│   ├── service/     AiService
-│   ├── config/      AiConfig / RedisChatMemory
-│   └── dto/         ChatRequest
-├── log/             日志模块 (操作日志 / 登录日志 / @OpLog AOP)
-│   ├── controller/
-│   ├── aspect/      LogAspect
-│   ├── annotation/  OpLog
-│   ├── entity/      OperationLog, LoginLog
-│   └── mapper/
-├── security/        权限实现 (StpInterfaceImpl / TokenRedisInterceptor)
-├── config/          配置 (CORS / MyBatis-Plus / Sa-Token / Jackson / Cache / WebMvc)
-└── common/          公共 (ApiResponse / GlobalExceptionHandler)
+## 后端架构
+
+主站上下文为 `identity / content / interaction / asset / administration / music / ai / shared`，统一采用：
+
+```text
+interfaces       HTTP 请求、响应、权限入口
+    ↓
+application      用例编排与事务
+    ↓
+domain           业务模型、规则、repository/query 契约
+    ↑
+infrastructure   实现仓储、MyBatis、Redis、图床 HTTP、官方 CLI 和模型适配
 ```
 
-## 快速开始
+domain 不依赖 Spring、MyBatis、Redis、HTTP SDK 或 Reactor；业务数据操作经仓储契约，由 infrastructure 实现。application 不反向依赖 infrastructure 或 HTTP DTO，Controller 不暴露 ORM 实体。只读管理统计不强造聚合。
 
-### 环境要求
-- JDK 17+
-- Maven 3.8+
-- Node.js 18+
-- MySQL 8.0+
-- Redis 6.0+
+实际代码范围与未完成事项见 [架构实施记录](docs/architecture-refactor-2026-10-03.md)。并发版本控制、完整跨上下文投影与 AI 耐久索引任务仍是待办，不因目录迁移而视为完成。
 
-### 1. 初始化数据库
+## 本地开发
 
-执行 `blog-server/src/main/resources/db/schema.sql` 创建表结构和种子数据（管理员账号 + 角色 + 13 条权限）。
+环境：JDK 17、Maven 3.8+、Node.js 22.12+、PostgreSQL、Redis。现有本机 PostgreSQL 使用容器 `unruffled_bartik` 中独立的 `blog_system` 库；不要改动 `family_memory`。
 
-### 2. 配置
+在根目录构建后端：
 
-编辑 `blog-server/src/main/resources/application-dev.yml`：
-- 数据库连接（host / port / username / password）
-- Redis 连接（host / port / database）
-- 上传目录（`blog.upload.dir`）
-- JWT 密钥（`sa-token.jwt-secret-key`）
+```powershell
+mvn -B -ntp clean test
+```
 
-### 3. 启动后端
+不要在正在运行的后端读取 `target/classes` 时并行 clean 或重编译。配置通过环境变量注入；不把密码、JWT 密钥、图床 Token、网易云私钥写入文档、源码或前端产物。
 
-```bash
+本机已有环境的启动入口：
+
+```powershell
+./tools/start-local-backend.ps1
+```
+
+该脚本加载已确认的本地配置，并强制关闭 AI。其他环境先配置数据库、Redis、JWT 等，再启动：
+
+```powershell
 cd blog-server
 mvn compile
-mvn exec:java -Dexec.mainClass="com.blogsystem.BlogServerApplication"
+mvn exec:java "-Dexec.mainClass=com.blogsystem.BlogServerApplication" "-Dexec.args=--spring.profiles.active=dev"
 ```
 
-后端默认运行在 `http://localhost:8080`，API 文档 `http://localhost:8080/doc.html`。
+不要使用 `mvn spring-boot:run`，当前中文路径存在兼容问题。业务 API 默认为 `http://localhost:8080`，Knife4j 为 `http://localhost:8080/doc.html`。
 
-### 4. 启动前端
+公开端：
 
-```bash
-# 公开博客 (http://localhost:5173)
+```powershell
 cd blog-web
-npm install
-npx vite --port 5173
+npm ci
+npm test
+npm run dev
+```
 
-# 管理后台 (http://localhost:5174)
+从 `http://127.0.0.1:5173/` 访问；脚本同时启动 Vite 5173 和自动发布进程 5176，`/api` 代理到后端 8080。后端启动目录为 blog-server，dev 共享凭据自动生成并忽略提交。
+
+另一个终端启动管理端：
+
+```powershell
 cd blog-admin
 npm install --legacy-peer-deps
 npx vite --port 5174
 ```
 
-## 功能概览
+管理端地址为 `http://localhost:5174/`。单博主认证与权限见 [认证说明](docs/single-owner-authentication.md)。
 
-### 公开博客 (blog-web)
+## 内容发布与构建目录
 
-- 游客浏览：文章列表 / 详情 / 阅读量统计 / 热门文章
-- 分类 + 标签筛选：三栏布局自适应视口
-- 手机验证码注册/登录
-- 评论互动：发表 / 回复 / 昵称 + 头像
-- 个人信息：`/profile` 编辑昵称 / 邮箱 / 头像
-- 点赞：toggle 模式，防止重复点赞
-- 图片自适应展示
+在 `blog-web` 执行：
 
-### 管理后台 (blog-admin)
-
-- **文章管理**：WYSIWYG 编辑器 (Tiptap)，支持：
-  - 拖拽/粘贴图片自动上传
-  - 图片拖拽缩放 + 说明文字
-  - Bold / Italic / H1-H3 / 引用 / 代码 / 列表 / 链接
-  - 图片点击编辑 URL
-- **评论审核**：通过 / 隐藏 / 删除
-- **分类管理**：新建 / 编辑 / 删除
-- **标签管理**：新建 / 编辑 / 删除
-- **用户管理**：分页 / 启用禁用 / 删除 / 头像同步
-- **操作日志**：@OpLog AOP 自动记录 + 管理端查看
-- **明暗双主题**：localStorage 持久化
-- **管理员头像+昵称**：侧边栏同步用户信息
-- **Redis 会话管理**：删除 Redis 凭证即时生效
-
-### 后端能力
-
-- 13 条权限码 RBAC (`@SaCheckPermission`)
-- JWT + Redis 混合会话：JWT 负责跨服务验证，Redis 负责会话撤销
-- 验证码限流（手机号 60s / IP 每天 10 次）
-- 热门文章 ZSet 缓存（ZREVRANGE + selectBatchIds）
-- AI 流式对话（SSE + Qwen-Max + 博客文章 RAG + Redis 记忆）
-- 文件上传（本地存储 + file_record 表 + MD5 校验）
-- @OpLog AOP 自动记录操作日志
-- 全局异常处理（区分 400/401/403/500）
-- Docker Compose 一键部署（MySQL + Redis + blog-server + Nginx）
-
-## 配置速查
-
-### Sa-Token 当前配置
-
-```yaml
-sa-token:
-  token-name: Authorization
-  timeout: 86400           # 24 小时
-  is-concurrent: true      # 同一账号可多处登录
-  is-share: false          # 每次登录独立 token
-  jwt-secret-key: ${sa-token.jwt-secret-key}
+```powershell
+$env:BLOG_API_URL = 'http://127.0.0.1:8080'
+$env:BLOG_SITE_URL = 'https://你的公开站点域名'
+npm run content:sync
+npm run build
 ```
 
-### 权限码 (13 条)
+同步只读取公开已发布列表，不携带管理员 Token。构建顺序为 Vue → Hexo → 组装：
 
-```
-admin:user:list / update / delete
-admin:log:list
-content:article:write / delete
-content:category:write / delete
-content:tag:write / delete
-comment:admin:list / audit / delete
-```
+| 目录 | 当前用途 |
+| --- | --- |
+| `blog-web/app/` | Vue 源码，不是构建输出 |
+| `blog-web/source/` | Hexo 内容与静态资源 |
+| `blog-web/.build/app/` | Vite 中间输出，含 Hexo 所需 manifest |
+| `blog-web/.build/blog/` | Hexo 中间输出 |
+| `blog-web/dist/` | 最终部署产物，`dist/blog/` 为博客 |
 
-### 关键 API
+以当前配置为准，中间目录不是 `app-dist` / `blog-dist`。不要编辑或提交生成产物。只执行 `npm run build` 不会自动同步数据库；详细流程见 [公开端开发说明](blog-web/README.md)。
 
-| 接口 | 方法 | 说明 |
-|---|---|---|
-| `/api/auth/login` | POST | 手机验证码登录 |
-| `/api/auth/me` | GET | 当前用户信息 |
-| `/api/content/article/list` | GET | 文章分页 |
-| `/api/content/article/{id}` | GET | 文章详情 |
-| `/api/content/article` | POST | 新建/更新文章 |
-| `/api/file/upload` | POST | 文件上传 (subDir 参数) |
-| `/api/file/delete` | DELETE | 删除文件 + DB 记录 |
-| `/api/ai/chat` | POST | AI 流式对话 (SSE) |
+## 部署与 CI
 
-## 开发说明
+Jenkins 当前执行数据库迁移工具测试、两项后端模块测试/打包、音乐运行时契约测试、两个前端测试/构建，再构建五个 Docker 镜像：`blog-server / blog-ai / blog-web / blog-admin / blog-publisher`。是否推送由 `PUSH_IMAGES` 控制，默认分支额外推送 `latest`。
 
-- 验证码开发环境返回固定 mock 码，无需短信服务
-- 管理员手机 `13800000000`，通过验证码登录
-- 管理端 token 存 `localStorage`，有效期由 Redis 控制
-- Redis 中删除 `Authorization:login:token:{token}` 可立即撤销登录态
-- 文章 `contentMd` 字段当前存储 HTML（Tiptap 输出），旧文章 Markdown 仍兼容
-- 旧 ByTemd 编辑器已由 Tiptap 替换，图文分离时代结束
+需配置 Registry 地址、命名空间及 Jenkins 凭据。若构建需要数据库最新文章，显式启用 `SYNC_BLOG_CONTENT` 并设置 `BLOG_PUBLIC_API_URL` 与 `BLOG_SITE_URL`；默认不自动同步，干净工作区可能没有导出的文章。
 
-## 相关文档
+Compose 使用已有外部 PostgreSQL，不创建或初始化数据库。普通启动不包含可选 `ai` profile；构建 AI 镜像不代表启用 AI。Nginx 反代业务 API 与发布进程的静态博客，图片/音频仍由浏览器直接读取图床。生产增加共享 PUBLICATION_API_TOKEN（至少 32 字符）和发布持久卷，不公开内部端口。部署配置与风险见 [技术开发基线](docs/technical-development-baseline.md)。
 
-- `docs/phase1-progress.md` — 第一阶段完成情况
-- `docs/phase2-progress.md` — 第二阶段进度 (Redis / 日志 / 权限 / Docker / AI)
-- `docs/extend.md` — 第三阶段扩展 (编辑器重构 / 图片管理)
-- `docs/ai-chat-module.md` — AI 模块集成
-- `docs/troubleshooting-and-lessons-learned.md` — 全阶段问题记录
+## 专项文档
+
+- [PostgreSQL 迁移、备份与回退](docs/postgresql-migration.md)
+- [Cloudflare 图片模块](docs/cloudflare-image-storage.md)
+- [音乐托管歌单](docs/music-hosted-web-2026-10-03.md)、[连续播放](docs/music-continuity-2026-10-03.md)、[圆盘控制](docs/music-disc-controls-2026-10-03.md)
+- [音乐目录管理](docs/music-catalog-management.md)：管理端自定义歌曲资料及音频/封面/歌词资源
+- [主题组件与配色](docs/theme-card-restoration-2026-10-03.md)、[前端资源](docs/frontend-assets-guide.md)
+- [AI 模块与未完成边界](docs/ai-chat-module.md)、[AI 开关](docs/ai-disabled-validation.md)
+- [后续待办](docs/backlog.md)、[文档整理与恢复](docs/document-maintenance.md)

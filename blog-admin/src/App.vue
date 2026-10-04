@@ -1,498 +1,77 @@
 <template>
-  <div class="admin-shell" :class="{ 'no-sidebar': $route.path === '/login' }">
-    <aside class="sidebar" v-if="$route.path !== '/login'">
-      <div class="sidebar-brand" @click="$router.push('/dashboard')">
-        <span class="brand-icon">&#9733;</span>
-        <span class="brand-text">Blog Admin</span>
-      </div>
-      <button class="hamburger" @click="menuOpen = !menuOpen">
-        <span :class="{ open: menuOpen }"></span>
-      </button>
-
-      <nav class="sidebar-nav">
-        <router-link to="/dashboard" class="nav-item" active-class="nav-item--active">
-          <span class="nav-icon">&#9733;</span>
-          <span>仪表盘</span>
-        </router-link>
-        <router-link to="/articles" class="nav-item" active-class="nav-item--active">
-          <span class="nav-icon">&#9998;</span>
-          <span>文章管理</span>
-        </router-link>
-        <router-link to="/comments" class="nav-item" active-class="nav-item--active">
-          <span class="nav-icon">&#9993;</span>
-          <span>评论审核</span>
-        </router-link>
-        <router-link to="/categories" class="nav-item" active-class="nav-item--active">
-          <span class="nav-icon">&#9737;</span>
-          <span>分类管理</span>
-        </router-link>
-        <router-link to="/tags" class="nav-item" active-class="nav-item--active">
-          <span class="nav-icon">&#9733;</span>
-          <span>标签管理</span>
-        </router-link>
-        <router-link to="/users" class="nav-item" active-class="nav-item--active">
-          <span class="nav-icon">&#9787;</span>
-          <span>用户管理</span>
-        </router-link>
-        <router-link to="/logs" class="nav-item" active-class="nav-item--active">
-          <span class="nav-icon">&#9776;</span>
-          <span>操作日志</span>
-        </router-link>
-      </nav>
-
-      <div class="sidebar-user" v-if="auth.user">
-        <div class="user-avatar">
-          <img v-if="auth.user.avatar" :src="auth.user.avatar" alt="avatar" />
-          <span v-else class="avatar-placeholder">{{ (auth.user.nickname || auth.user.username || 'A')[0] }}</span>
-        </div>
-        <div class="user-info">
-          <span class="user-name">{{ auth.user.nickname || auth.user.username }}</span>
-          <span class="user-role">管理员</span>
-        </div>
-      </div>
-
-      <div class="sidebar-foot">
-        <button class="theme-toggle" @click="toggleTheme">
-          {{ currentTheme === 'dark' ? '&#9728; 亮色' : '&#9790; 暗色' }}
-        </button>
-        <button v-if="auth.isLoggedIn" class="logout-btn" @click="handleLogout">退出</button>
-      </div>
+  <div v-if="auth.initialized" class="admin-shell" :class="{'no-sidebar': isLogin}">
+    <a v-if="!isLogin" class="skip-link" href="#admin-main">跳到内容</a>
+    <aside v-if="!isLogin" class="sidebar">
+      <router-link class="sidebar-brand" to="/dashboard" aria-label="Javerry 博客工作台">
+        <span class="brand-mark"><img v-if="publicBlogUrl && !logoFailed" :src="publicBlogUrl + 'img/site-logo.jpg'" alt="" @error="logoFailed = true"/><span v-else>J</span></span>
+        <span><strong>{{ adminTheme.brand.name }}</strong><small>{{ adminTheme.brand.subtitle }}</small></span>
+      </router-link>
+      <router-link class="sidebar-compose" to="/article/new"><el-icon><EditPen/></el-icon>写文章</router-link>
+      <AdminNavigation/>
+      <div class="sidebar-storage"><span class="storage-indicator"></span><div><strong>Telegram 图床</strong><small>Cloudflare ImgBed · 后端接入</small></div></div>
+      <router-link v-if="auth.user" to="/account" class="sidebar-user" title="编辑博主资料">
+        <div class="user-avatar"><img v-if="auth.user.avatar" :src="auth.user.avatar" alt="博主头像"/><span v-else>{{ ownerName.slice(0, 1) }}</span></div>
+        <div class="user-info"><strong>{{ ownerName }}</strong><small>唯一博主</small></div>
+        <el-icon><Setting/></el-icon>
+      </router-link>
     </aside>
 
-    <main class="main-content">
-      <router-view v-slot="{ Component }">
-        <transition name="page-fade" mode="out-in">
-          <component :is="Component" />
-        </transition>
-      </router-view>
-    </main>
-
-    <!-- 移动端侧边抽屉 -->
-    <Teleport to="body">
-      <div class="mobile-overlay" :class="{ show: menuOpen }" @click.self="menuOpen = false">
-        <div class="mobile-drawer">
-          <button class="mobile-close" @click="menuOpen = false">&times;</button>
-          <nav class="mobile-nav">
-            <router-link to="/articles" class="mobile-nav-item" @click="menuOpen = false">&#9998; 文章管理</router-link>
-            <router-link to="/comments" class="mobile-nav-item" @click="menuOpen = false">&#9993; 评论审核</router-link>
-            <router-link to="/categories" class="mobile-nav-item" @click="menuOpen = false">&#9737; 分类管理</router-link>
-            <router-link to="/tags" class="mobile-nav-item" @click="menuOpen = false">&#9733; 标签管理</router-link>
-            <router-link to="/users" class="mobile-nav-item" @click="menuOpen = false">&#9787; 用户管理</router-link>
-            <router-link to="/logs" class="mobile-nav-item" @click="menuOpen = false">&#9776; 操作日志</router-link>
-          </nav>
-          <div class="mobile-foot">
-            <button class="theme-toggle" @click="toggleTheme">{{ currentTheme === 'dark' ? '☀ 亮色' : '☾ 暗色' }}</button>
-            <button v-if="auth.isLoggedIn" class="logout-btn" @click="handleLogout; menuOpen = false">退出</button>
-          </div>
+    <div class="admin-workspace">
+      <header v-if="!isLogin" class="workspace-header">
+        <button type="button" class="icon-button mobile-menu-toggle" aria-label="打开管理导航" :aria-expanded="menuOpen" @click="menuOpen = true"><el-icon><Expand/></el-icon></button>
+        <div class="workspace-breadcrumb"><span>博客管理</span><el-icon><ArrowRight/></el-icon><strong>{{ route.meta.title || '工作台' }}</strong></div>
+        <div class="workspace-actions">
+          <a v-if="publicBlogUrl" :href="publicBlogUrl" target="_blank" rel="noopener noreferrer" class="visit-blog"><el-icon><TopRight/></el-icon><span>查看博客</span></a>
+          <button type="button" class="icon-button" :aria-label="currentTheme === 'dark' ? '切换浅色模式' : '切换深色模式'" @click="toggleTheme"><el-icon><Sunny v-if="currentTheme === 'dark'"/><Moon v-else/></el-icon></button>
+          <button v-if="auth.isLoggedIn" type="button" class="text-action" @click="handleLogout">退出</button>
         </div>
-      </div>
-    </Teleport>
+      </header>
+      <main id="admin-main" class="main-content" tabindex="-1">
+        <PublicationNotice v-if="!isLogin && auth.isLoggedIn"/>
+        <router-view v-slot="{Component}"><transition name="page-fade" mode="out-in"><component :is="Component" :key="route.path"/></transition></router-view>
+      </main>
+    </div>
+    <el-drawer v-if="!isLogin" v-model="menuOpen" title="博客管理" direction="ltr" size="280px">
+      <router-link class="sidebar-compose" to="/article/new" @click="menuOpen = false"><el-icon><EditPen/></el-icon>写文章</router-link>
+      <AdminNavigation @navigate="menuOpen = false"/>
+      <router-link to="/account" class="drawer-owner" @click="menuOpen = false">博主设置 · {{ ownerName }}</router-link>
+    </el-drawer>
   </div>
+  <div v-else class="init-loader" role="status" aria-label="正在验证管理会话"><span class="init-spinner"></span></div>
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { useAdminAuthStore } from './stores/auth'
+import {computed, onMounted, ref, watch} from 'vue'
+import {useRoute, useRouter} from 'vue-router'
+import {EditPen, Setting, Expand, ArrowRight, TopRight, Sunny, Moon} from '@element-plus/icons-vue'
+import {useAdminAuthStore} from './stores/auth'
+import {adminTheme} from './config/theme'
+import {publicBlogUrl} from './config/blog'
+import AdminNavigation from './components/AdminNavigation.vue'
+import PublicationNotice from './components/PublicationNotice.vue'
+import './styles/admin.css'
 
-const router = useRouter()
-const auth = useAdminAuthStore()
-const menuOpen = ref(false)
-const THEME_KEY = 'admin_theme'
-const currentTheme = ref('light')
-
-const applyTheme = (theme) => {
+const router = useRouter(), route = useRoute(), auth = useAdminAuthStore()
+const menuOpen = ref(false), logoFailed = ref(false), currentTheme = ref('light')
+const isLogin = computed(() => route.path === '/login')
+const ownerName = computed(() => auth.user?.nickname || auth.user?.username || '博主')
+const applyTheme = theme => {
   currentTheme.value = theme === 'dark' ? 'dark' : 'light'
   document.documentElement.setAttribute('data-admin-theme', currentTheme.value)
   document.documentElement.classList.toggle('dark', currentTheme.value === 'dark')
-  localStorage.setItem(THEME_KEY, currentTheme.value)
+  localStorage.setItem('admin_theme', currentTheme.value)
 }
-
-const toggleTheme = () => {
-  applyTheme(currentTheme.value === 'dark' ? 'light' : 'dark')
+const toggleTheme = () => applyTheme(currentTheme.value === 'dark' ? 'light' : 'dark')
+const handleLogout = async () => {
+  try { await auth.logout() } finally { menuOpen.value = false; router.push('/login') }
 }
-
-const handleLogout = () => {
-  auth.logout()
-  router.push('/login')
-}
-
+watch(() => route.fullPath, () => {
+  menuOpen.value = false
+  document.title = `${route.meta.title || '博客管理'} · Javerry`
+}, {immediate: true})
 onMounted(() => {
-  applyTheme(localStorage.getItem(THEME_KEY) || 'light')
-  if (auth.isLoggedIn && !auth.user) auth.fetchMe()
+  applyTheme(localStorage.getItem('admin_theme') || 'light')
+  if (auth.isLoggedIn) auth.fetchMe().catch(() => router.push('/login'))
+  else auth.initialized = true
 })
 </script>
-
-<style>
-:root {
-  --admin-bg: #f5f7fb;
-  --admin-surface: #fafbfd;
-  --admin-panel: #ffffff;
-  --admin-line: rgba(168, 184, 210, 0.22);
-  --admin-line-strong: rgba(140, 156, 186, 0.35);
-  --admin-text: #2e3852;
-  --admin-muted: #8a95b0;
-  --admin-accent: #6c9fd4;
-  --admin-accent-2: #c4a0d8;
-  --admin-accent-3: #f0a8b8;
-  --admin-danger: #e87888;
-  --admin-success: #78b89c;
-  --admin-shadow: 0 4px 24px rgba(108, 130, 170, 0.10);
-  --admin-shadow-lg: 0 12px 40px rgba(108, 130, 170, 0.14);
-  --admin-radius: 10px;
-  --admin-input-bg: rgba(248, 250, 253, 0.95);
-  --admin-soft-accent: rgba(108, 159, 212, 0.08);
-  --admin-soft-accent-strong: rgba(108, 159, 212, 0.16);
-  --admin-soft-danger: rgba(232, 120, 136, 0.08);
-  --admin-soft-success: rgba(120, 184, 156, 0.12);
-  --admin-soft-warn: rgba(224, 176, 128, 0.14);
-  --admin-table-head: rgba(108, 159, 212, 0.05);
-  --admin-table-hover: rgba(108, 159, 212, 0.04);
-  --admin-btn-text: #ffffff;
-  --admin-sidebar-bg: #ffffff;
-  --admin-sidebar-hover: rgba(108, 159, 212, 0.06);
-  --admin-sidebar-active: rgba(108, 159, 212, 0.10);
-  font-family: "Noto Sans SC", "Inter", -apple-system, sans-serif;
-  color: var(--admin-text);
-  background: var(--admin-bg);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-:root[data-admin-theme='dark'] {
-  --admin-bg: #161b25;
-  --admin-surface: #1c2230;
-  --admin-panel: #1e2434;
-  --admin-line: rgba(140, 160, 200, 0.12);
-  --admin-line-strong: rgba(140, 160, 200, 0.20);
-  --admin-text: #d8def0;
-  --admin-muted: #7c869e;
-  --admin-accent: #7ab4e0;
-  --admin-accent-2: #b8a0d0;
-  --admin-accent-3: #f0a0b0;
-  --admin-danger: #e87888;
-  --admin-success: #78b89c;
-  --admin-shadow: 0 4px 28px rgba(0, 0, 0, 0.30);
-  --admin-shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.40);
-  --admin-input-bg: rgba(30, 36, 52, 0.90);
-  --admin-soft-accent: rgba(122, 180, 224, 0.08);
-  --admin-soft-accent-strong: rgba(122, 180, 224, 0.15);
-  --admin-soft-danger: rgba(232, 120, 136, 0.08);
-  --admin-soft-success: rgba(120, 184, 156, 0.12);
-  --admin-soft-warn: rgba(224, 176, 128, 0.12);
-  --admin-table-head: rgba(122, 180, 224, 0.05);
-  --admin-table-hover: rgba(122, 180, 224, 0.04);
-  --admin-btn-text: #161b25;
-  --admin-sidebar-bg: #1a202e;
-  --admin-sidebar-hover: rgba(122, 180, 224, 0.06);
-  --admin-sidebar-active: rgba(122, 180, 224, 0.10);
-}
-
-* { box-sizing: border-box; }
-html, body, #app { min-height: 100%; }
-body {
-  margin: 0;
-  background: var(--admin-bg);
-  transition: background .25s ease, color .25s ease;
-}
-a { color: inherit; text-decoration: none; }
-button { font: inherit; cursor: pointer; }
-img { max-width: 100%; display: block; }
-
-/* ---- Shell ---- */
-.admin-shell {
-  display: flex;
-  min-height: 100vh;
-}
-
-/* ---- Sidebar ---- */
-.sidebar {
-  position: sticky;
-  top: 0;
-  width: 220px;
-  min-height: 100vh;
-  background: var(--admin-sidebar-bg);
-  border-right: 1px solid var(--admin-line);
-  display: flex;
-  flex-direction: column;
-  padding: 20px 14px;
-  gap: 6px;
-  z-index: 100;
-  flex-shrink: 0;
-}
-.sidebar-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  margin-bottom: 16px;
-  cursor: pointer;
-  transition: opacity .2s;
-}
-.sidebar-brand:hover { opacity: .8; }
-.brand-icon { font-size: 22px; color: var(--admin-accent-3); }
-.brand-text { font-size: 17px; font-weight: 700; color: var(--admin-text); letter-spacing: .02em; }
-
-.sidebar-nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
-
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  font-size: 14px;
-  color: var(--admin-muted);
-  border-radius: 8px;
-  transition: all .22s ease;
-  font-weight: 500;
-  border-left: 3px solid transparent;
-}
-.nav-item:hover {
-  background: var(--admin-sidebar-hover);
-  color: var(--admin-text);
-}
-.nav-item--active {
-  background: var(--admin-sidebar-active);
-  color: var(--admin-accent);
-  border-left-color: var(--admin-accent);
-  font-weight: 600;
-}
-.nav-icon { font-size: 16px; width: 20px; text-align: center; }
-
-/* ---- User profile in sidebar ---- */
-.sidebar-user {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 12px;
-  margin-top: auto;
-  border-top: 1px solid var(--admin-line);
-}
-.user-avatar {
-  width: 38px; height: 38px;
-  border-radius: 50%;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-.user-avatar img {
-  width: 100%; height: 100%;
-  object-fit: cover;
-}
-.avatar-placeholder {
-  width: 100%; height: 100%;
-  display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, var(--admin-accent), var(--admin-accent-2));
-  color: #fff;
-  font-size: 15px; font-weight: 700;
-}
-.user-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.user-name {
-  font-size: 14px; font-weight: 600; color: var(--admin-text);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.user-role { font-size: 11px; color: var(--admin-muted); letter-spacing: .04em; }
-
-.sidebar-foot {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-top: 12px;
-  border-top: 1px solid var(--admin-line);
-}
-.theme-toggle, .logout-btn {
-  padding: 8px 14px;
-  font-size: 13px;
-  border: none;
-  background: transparent;
-  color: var(--admin-muted);
-  border-radius: 8px;
-  transition: all .2s;
-  text-align: left;
-}
-.theme-toggle:hover { background: var(--admin-soft-accent); color: var(--admin-accent); }
-.logout-btn:hover { background: var(--admin-soft-danger); color: var(--admin-danger); }
-
-/* ---- Main Content ---- */
-.main-content {
-  flex: 1;
-  min-width: 0;
-  padding: 32px 36px 64px;
-  position: relative;
-  z-index: 1;
-}
-.no-sidebar .main-content { padding: 0; }
-
-/* ---- Transitions ---- */
-.page-fade-enter-active, .page-fade-leave-active {
-  transition: opacity .22s ease, transform .22s ease;
-}
-.page-fade-enter-from { opacity: 0; transform: translateY(8px); }
-.page-fade-leave-to { opacity: 0; transform: translateY(-6px); }
-
-/* ---- Element Plus Overrides ---- */
-.el-table {
-  background: transparent !important;
-  color: var(--admin-text) !important;
-  --el-table-border-color: var(--admin-line) !important;
-}
-.el-table th.el-table__cell {
-  background: var(--admin-table-head) !important;
-  color: var(--admin-muted) !important;
-  font-weight: 600 !important;
-  font-size: 12px !important;
-  letter-spacing: .06em !important;
-  border-bottom: 1px solid var(--admin-line) !important;
-}
-.el-table td.el-table__cell { border-bottom: 1px solid var(--admin-line) !important; }
-.el-table tr:hover > td { background: var(--admin-table-hover) !important; }
-.el-table__inner-wrapper::before { display: none !important; }
-
-.el-pagination { justify-content: center !important; margin-top: 24px !important; }
-.el-pagination button, .el-pager li {
-  background: transparent !important;
-  color: var(--admin-muted) !important;
-  border: 1px solid var(--admin-line) !important;
-  border-radius: 8px !important;
-}
-.el-pager li.is-active {
-  background: var(--admin-accent) !important;
-  color: var(--admin-btn-text) !important;
-  border-color: var(--admin-accent) !important;
-}
-
-.el-input__wrapper, .el-textarea__inner, .el-select__wrapper {
-  background: var(--admin-input-bg) !important;
-  box-shadow: 0 0 0 1px var(--admin-line-strong) inset !important;
-  border-radius: 8px !important;
-}
-.el-input__inner, .el-textarea__inner, .el-select__placeholder,
-.el-select__selected-item { color: var(--admin-text) !important; }
-
-.el-select-dropdown, .el-popper.is-light {
-  background: var(--admin-panel) !important;
-  border: 1px solid var(--admin-line-strong) !important;
-  box-shadow: var(--admin-shadow-lg) !important;
-  border-radius: 10px !important;
-}
-.el-select-dropdown__item:hover, .el-select-dropdown__item.is-hovering,
-.el-select-dropdown__item.selected {
-  background: var(--admin-soft-accent) !important;
-  color: var(--admin-text) !important;
-  border-radius: 6px !important;
-}
-
-.el-message {
-  background: var(--admin-panel) !important;
-  border: 1px solid var(--admin-line) !important;
-  box-shadow: var(--admin-shadow) !important;
-  border-radius: 10px !important;
-}
-.el-message__content { color: var(--admin-text) !important; }
-
-.el-dialog, .el-message-box, .el-drawer {
-  background: var(--admin-panel) !important;
-  border: 1px solid var(--admin-line) !important;
-  box-shadow: var(--admin-shadow-lg) !important;
-}
-.el-dialog__title, .el-message-box__title, .el-message-box__message,
-.el-drawer__title { color: var(--admin-text) !important; }
-.el-dialog__header, .el-message-box__header {
-  border-bottom: 1px solid var(--admin-line) !important;
-}
-
-.el-button--primary {
-  background: var(--admin-accent) !important;
-  border-color: var(--admin-accent) !important;
-  color: var(--admin-btn-text) !important;
-  border-radius: 8px !important;
-}
-.el-button--danger {
-  background: transparent !important;
-  border-color: var(--admin-danger) !important;
-  color: var(--admin-danger) !important;
-  border-radius: 8px !important;
-}
-.el-button--danger:hover { background: var(--admin-soft-danger) !important; }
-.el-button { border-radius: 8px !important; }
-
-.el-switch {
-  --el-switch-on-color: var(--admin-accent) !important;
-  --el-switch-off-color: var(--admin-line-strong) !important;
-}
-
-.el-tag {
-  border-radius: 6px !important;
-  border: none !important;
-}
-
-@media (max-width: 860px) {
-  .sidebar { width: 180px; padding: 16px 10px; }
-  .main-content { padding: 24px 18px 48px; }
-}
-
-/* ---- Hamburguer + Mobile Drawer (admin) ---- */
-.hamburger {
-  display: none;
-  width: 36px; height: 36px;
-  background: none; border: 1px solid var(--admin-line);
-  border-radius: 8px; cursor: pointer;
-  position: relative;
-}
-.hamburger span,
-.hamburger span::before,
-.hamburger span::after {
-  display: block; width: 18px; height: 2px;
-  background: var(--admin-text); border-radius: 2px;
-  transition: all .25s ease; position: absolute;
-}
-.hamburger span { top: 50%; left: 50%; transform: translate(-50%, -50%); }
-.hamburger span::before { content: ''; top: -5px; left: 0; }
-.hamburger span::after { content: ''; top: 5px; left: 0; }
-.hamburger span.open { background: transparent; }
-.hamburger span.open::before { top: 0; transform: rotate(45deg); }
-.hamburger span.open::after { top: 0; transform: rotate(-45deg); }
-
-.mobile-overlay {
-  position: fixed; inset: 0; z-index: 300;
-  background: rgba(0,0,0,0.4);
-  opacity: 0; visibility: hidden; transition: all .3s;
-}
-.mobile-overlay.show { opacity: 1; visibility: visible; }
-.mobile-drawer {
-  position: fixed; top: 0; left: 0; bottom: 0;
-  width: min(260px, 75vw);
-  background: var(--admin-panel); padding: 20px;
-  display: flex; flex-direction: column; gap: 8px;
-  transform: translateX(-100%); transition: transform .3s ease;
-  box-shadow: 4px 0 20px rgba(0,0,0,0.2);
-}
-.mobile-overlay.show .mobile-drawer { transform: translateX(0); }
-.mobile-close {
-  align-self: flex-end; background: none; border: none;
-  color: var(--admin-muted); font-size: 26px; cursor: pointer;
-}
-.mobile-nav { display: flex; flex-direction: column; gap: 2px; }
-.mobile-nav-item {
-  display: block; padding: 12px 14px; border-radius: 8px;
-  color: var(--admin-text); font-size: 15px; transition: all .2s;
-}
-.mobile-nav-item:hover { background: var(--admin-soft-accent); }
-.mobile-foot {
-  margin-top: auto; display: flex; flex-direction: column; gap: 8px;
-  border-top: 1px solid var(--admin-line); padding-top: 12px;
-}
-
-@media (max-width: 640px) {
-  .admin-shell { flex-direction: column; }
-  .sidebar {
-    position: static; width: 100%; min-height: auto;
-    padding: 10px 14px; flex-direction: row; align-items: center; gap: 10px;
-  }
-  .sidebar-brand { margin-bottom: 0; font-size: 15px; }
-  .sidebar-nav { display: none; }
-  .sidebar-user { display: none; }
-  .sidebar-foot { display: none; }
-  .hamburger { display: block; margin-left: auto; }
-  .main-content { padding: 20px 14px 40px; }
-}
-</style>

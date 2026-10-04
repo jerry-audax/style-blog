@@ -1,0 +1,12 @@
+target
+.git
+.gitignore
+*.log
+.idea
+.env
+.env.*
+*.env
+music-runtime/node_modules
+**/*.pem
+**/*.key
+data

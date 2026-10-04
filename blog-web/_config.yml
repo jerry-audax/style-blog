@@ -1,0 +1,45 @@
+title: Javerry
+subtitle: 记录技术，分享思考，保持好奇。
+description: 分享技术学习、系统设计与开发实践的个人博客。
+author: Javerry
+language: zh-CN
+timezone: Asia/Shanghai
+url: http://localhost:5173/blog
+root: /blog/
+permalink: article/:title/
+source_dir: source
+public_dir: .build/blog
+theme: anzhiyu
+new_post_name: :title.md
+default_layout: post
+render_drafts: false
+future: false
+post_asset_folder: false
+external_link:
+  enable: true
+  field: site
+  exclude: [ ]
+syntax_highlighter: highlight.js
+highlight:
+  enable: true
+  line_number: true
+  auto_detect: false
+index_generator:
+  per_page: 10
+  order_by: -date
+per_page: 10
+pagination_dir: page
+date_format: YYYY-MM-DD
+time_format: HH:mm
+updated_option: date
+skip_render:
+  - js/**
+  - css/**
+  - vendor/**
+# Hexo already limits content processing to source_dir. A broad **/app/**
+# ignore also matches Docker's /app working directory and hides the theme.
+ignore: [ ]
+search:
+  path: search.xml
+  field: post
+  content: true

@@ -1,27 +1,53 @@
 {
-  "name": "blog-web",
+  "name": "javerry-hexo-blog",
   "private": true,
   "version": "0.0.1",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "test": "vitest run"
+  "description": "Javerry Hexo technical blog with Vue interactions and the official AnZhiYu theme",
+  "engines": {
+    "node": ">=22.12.0"
   },
-  "dependencies": {
-    "axios": "^1.7.2",
-    "dompurify": "^3.4.9",
-    "markdown-it": "^14.1.1",
-    "pinia": "^2.1.7",
-    "vue": "^3.4.31",
-    "vue-router": "^4.4.0"
+  "hexo": {
+    "version": "8.1.2"
+  },
+  "workspaces": [
+    "app"
+  ],
+  "scripts": {
+    "dev": "node tools/dev.cjs",
+    "dev:static": "hexo server --ip 127.0.0.1 --port 5176",
+    "dev:app": "npm run dev --workspace app -- --host 127.0.0.1 --port 5173",
+    "build": "npm run build:app && npm run build:static && node tools/assemble.cjs",
+    "build:app": "npm run build --workspace app",
+    "build:static": "hexo clean && hexo generate",
+    "preview": "node tools/preview.cjs",
+    "content:sync": "node tools/sync-content.mjs",
+    "publication:start": "node publication/interfaces/server.cjs",
+    "test": "node --test tests/*.test.cjs && npm test --workspace app"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^5.0.5",
-    "jsdom": "^29.1.1",
-    "typescript": "^5.5.3",
-    "vite": "^5.3.4",
-    "vitest": "^2.1.9"
+    "vite": "7.3.6"
+  },
+  "dependencies": {
+    "anzhiyu-blog-static": "1.0.1",
+    "anzhiyu-theme-static": "1.1.10",
+    "dompurify": "3.4.16",
+    "hexo": "8.1.2",
+    "hexo-anzhiyu-music": "1.0.1",
+    "hexo-generator-archive": "2.0.0",
+    "hexo-generator-category": "2.0.0",
+    "hexo-generator-index": "4.0.0",
+    "hexo-generator-searchdb": "1.5.0",
+    "hexo-generator-tag": "2.0.0",
+    "hexo-renderer-marked": "7.0.1",
+    "hexo-renderer-pug": "3.0.0",
+    "hexo-renderer-stylus": "3.0.1",
+    "hexo-server": "3.0.0",
+    "hexo-theme-anzhiyu": "1.7.0",
+    "medium-zoom": "1.1.0",
+    "node-snackbar": "0.1.16",
+    "ogl": "1.0.11",
+    "pjax": "0.2.8",
+    "qrcodejs": "1.0.0",
+    "sanitize-html": "2.18.0"
   }
 }

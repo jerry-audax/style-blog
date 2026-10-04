@@ -1,24 +1,24 @@
 spring:
   datasource:
-    url: jdbc:mysql://localhost:3306/blog_system?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
-    username: root
-    password: ljr040209.
-    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${DB_URL:jdbc:postgresql://${DB_HOST:127.0.0.1}:5432/blog_system}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:}
   data:
     redis:
-      host: 192.168.233.145
-      port: 6380
-      database: 10
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DATABASE:1}
   ai:
     dashscope:
-      api-key: sk-b7b3fb1052354fa59a34816df1e0306d
+      api-key: ${DASHSCOPE_API_KEY:}
       chat:
         options:
           model: qwen-max
 
-sa-token:
-  jwt-secret-key: blog-system-secret-key-change-me
+publication:
+  base-url: ${PUBLICATION_BASE_URL:http://127.0.0.1:5176}
+  api-token: ${PUBLICATION_API_TOKEN:}
+  token-file: ${PUBLICATION_TOKEN_FILE:../blog-web/.runtime/publication.key}
 
-blog:
-  upload:
-    dir: C:/Users/刘家瑞/Desktop/CS_Studies/blog-system/uploads
+sa-token:
+  jwt-secret-key: ${SA_TOKEN_JWT_SECRET_KEY:${JWT_SECRET:}}

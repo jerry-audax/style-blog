@@ -1,0 +1,10 @@
+package com.blogsystem.content.domain.model;
+
+import com.blogsystem.shared.domain.Identifier;
+
+public record UserId(Long value) implements Identifier<Long> {
+
+    public UserId {
+        Identifier.requireValue(value);
+    }
+}

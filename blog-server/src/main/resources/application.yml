@@ -1,20 +1,61 @@
 server:
   port: 8080
 
+blog:
+  owner:
+    phone: ${BLOG_OWNER_PHONE:19140838906}
+
+publication:
+  base-url: ${PUBLICATION_BASE_URL:http://127.0.0.1:5176}
+  api-token: ${PUBLICATION_API_TOKEN:}
+  token-file: ${PUBLICATION_TOKEN_FILE:../blog-web/.runtime/publication.key}
+
+music:
+  node: ${MUSIC_NODE:node}
+  runtime-directory: ${MUSIC_RUNTIME_DIRECTORY:music-runtime}
+  state-directory: ${MUSIC_STATE_DIRECTORY:../data/music}
+  playlist-id: ${MUSIC_PLAYLIST_ID:939817038}
+
+surprise:
+  state-directory: ${SURPRISE_STATE_DIRECTORY:../data/music}
+
 spring:
   profiles:
     active: dev
   application:
     name: blog-server
   datasource:
-    url: ${DB_URL:jdbc:mysql://localhost:3306/blog_system?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
-    username: ${DB_USERNAME:root}
+    url: ${DB_URL:jdbc:postgresql://127.0.0.1:5432/blog_system}
+    username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:}
-    driver-class-name: ${DRIVER_CLASS_NAME:com.mysql.cj.jdbc.Driver}
+    driver-class-name: org.postgresql.Driver
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DATABASE:0}
+  sql:
+    init:
+      mode: never # Import snapshots explicitly; never run the historical MySQL schema.
   servlet:
     multipart:
-      max-file-size: 2MB
-      max-request-size: 10MB
+      enabled: true
+      max-file-size: 200MB
+      max-request-size: 205MB
+      file-size-threshold: 11MB
+imgbed:
+  base-url: ${IMGBED_BASE_URL:https://cloudflare-imgbed-6of.pages.dev}
+  api-token: ${IMGBED_API_TOKEN:}
+  upload-channel: ${IMGBED_UPLOAD_CHANNEL:telegram}
+  channel-name: ${IMGBED_CHANNEL_NAME:TelegramBot}
+  root-folder: ${IMGBED_ROOT_FOLDER:blog}
+ai:
+  enabled: ${AI_ENABLED:false}
+  knowledge:
+    initialize-on-startup: ${AI_INITIALIZE_ON_STARTUP:false}
+  client:
+    mode: ${AI_CLIENT_MODE:in-process}
+    base-url: ${AI_CLIENT_BASE_URL:http://localhost:8090}
 
 mybatis-plus:
   configuration:
@@ -27,13 +68,11 @@ mybatis-plus:
 
 sa-token:
   token-name: Authorization
+  is-read-cookie: false
+  is-read-body: false
   timeout: 86400
   active-timeout: -1
   is-concurrent: true
   is-share: false
   is-log: false
-  jwt-secret-key: ${JWT_SECRET:default-jwt-secret}
-
-blog:
-  upload:
-    dir: ${BLOG_UPLOAD_DIR:./uploads}
+  jwt-secret-key: ${JWT_SECRET:}

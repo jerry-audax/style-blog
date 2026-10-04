@@ -1,5 +1,7 @@
 # 开发问题与经验总结
 
+> 文档状态：跨阶段问题记录，包含已退休实现。2026-10-04 整理时保留排障经验；示例中的旧服务、数据库、文件存储和账户方案不是当前实施指令。当前路径/配置以 [技术基线](technical-development-baseline.md) 为准，AI 当前状态见 [AI 文档](ai-chat-module.md)。
+
 记录项目从零到第一阶段完成的全部典型问题与解决方案。
 
 ---
@@ -61,6 +63,7 @@ powershell -Command "Get-Process node -ErrorAction SilentlyContinue | ForEach-Ob
 **原因**：`@kangc/v-md-editor/lib/codemirror-editor` 依赖 CodeMirror（CommonJS 模块），Vite ESM 环境无法正确解析 CJS 模块的导出。
 
 **尝试过的方案**：
+
 - `vite.config.js` 中 `optimizeDeps.include` 添加 `['codemirror', '@kangc/v-md-editor']`（无效）
 - 安装 `codemirror` 作为直接依赖（无效）
 
@@ -71,6 +74,7 @@ npm install @bytemd/vue-next bytemd --legacy-peer-deps
 ```
 
 **代码变更**：
+
 ```js
 // 旧（不兼容）
 import VMdEditor from '@kangc/v-md-editor/lib/codemirror-editor'
@@ -126,6 +130,7 @@ import 'bytemd/dist/index.css'
 **解决**：调整 DOM 顺序为 `分类 | 主内容 | 标签`，匹配 Grid 列分配。
 
 **正确写法**：
+
 ```html
 <div class="layout-with-sidebar">
   <aside><!-- 分类（左列）--></aside>
@@ -135,6 +140,7 @@ import 'bytemd/dist/index.css'
 ```
 
 **关键 CSS**：
+
 ```css
 .layout-with-sidebar {
   display: grid;
@@ -151,6 +157,7 @@ import 'bytemd/dist/index.css'
 **原因**：热门文章 `v-if` 仅判断 `!activeCategoryId`，未考虑标签激活状态。
 
 **修复**：
+
 ```html
 <!-- 旧 -->
 <section v-if="!activeCategoryId && hotList.length > 0">
@@ -165,6 +172,7 @@ import 'bytemd/dist/index.css'
 **原因**：`catch { /* cancelled */ }` 没有参数，捕获所有错误后静默忽略。
 
 **修复**：区分用户取消操作和 API 错误：
+
 ```js
 } catch (e) {
   if (e !== 'cancel' && e !== 'close') {
@@ -181,7 +189,8 @@ import 'bytemd/dist/index.css'
 
 **现象**：调用 `articleMapper.deleteById(id)` 返回 200，但数据库 `deleted` 字段未变化。
 
-**原因**：MyBatis-Plus 全局逻辑删除配置 `logic-delete-field: deleted` 后，代码中手动 `setDeleted(1) + updateById()` 不会触发逻辑删除。`updateById` 是纯 UPDATE 操作，不经过逻辑删除拦截器。
+**原因**：MyBatis-Plus 全局逻辑删除配置 `logic-delete-field: deleted` 后，代码中手动 `setDeleted(1) + updateById()`
+不会触发逻辑删除。`updateById` 是纯 UPDATE 操作，不经过逻辑删除拦截器。
 
 **修复**：统一使用 `mapper.deleteById(id)` 方法，MP 自动转换为 `UPDATE SET deleted=1 WHERE id=? AND deleted=0`。
 
@@ -194,13 +203,16 @@ articleMapper.updateById(article);
 articleMapper.deleteById(id);
 ```
 
-**影响范围**：`ContentService.deleteArticle/deleteCategory/deleteTag`、`CommentService.adminDelete`、`AdminService.deleteUser`。
+**影响范围**：`ContentService.deleteArticle/deleteCategory/deleteTag`、`CommentService.adminDelete`、
+`AdminService.deleteUser`。
 
 ### 4.2 Sa-Token JWT 配置冲突
 
-**现象**：后端重启后 admin 页面的 API 请求全部返回 `{"code":500,"message":"系统繁忙"}`。服务器日志显示 `NotLoginException: token 无效`。
+**现象**：后端重启后 admin 页面的 API 请求全部返回 `{"code":500,"message":"系统繁忙"}`。服务器日志显示
+`NotLoginException: token 无效`。
 
-**原因**：`token-style: random-128` 与 `jwt-secret-key` 同时配置。`token-style` 生成的是随机字符串 token（有状态），依赖内存中的 session 映射。重启后 session 丢失，所有旧 token 失效。
+**原因**：`token-style: random-128` 与 `jwt-secret-key` 同时配置。`token-style` 生成的是随机字符串 token（有状态），依赖内存中的
+session 映射。重启后 session 丢失，所有旧 token 失效。
 
 **关键证据**：token 值类似 `UvEn4ICrS1tn56tnK...`（128 字符随机串），而非标准 JWT（`header.payload.signature` 三部分）。
 
@@ -246,9 +258,11 @@ public void deleteArticle(Long id) {
 
 **现象**：API 返回 `{"code":500,"message":"系统繁忙","data":null}`，但 HTTP 状态码为 200。
 
-**原因**：`GlobalExceptionHandler` 中 `@ExceptionHandler(Exception.class)` 捕获未预期的异常后返回 `ApiResponse.fail(500, "系统繁忙")`，但 HTTP 响应状态码被 Spring 默认处理为 200。
+**原因**：`GlobalExceptionHandler` 中 `@ExceptionHandler(Exception.class)` 捕获未预期的异常后返回
+`ApiResponse.fail(500, "系统繁忙")`，但 HTTP 响应状态码被 Spring 默认处理为 200。
 
-**解决**：在返回 `ApiResponse` 时需同时设置 HTTP 状态码。但当前前端拦截器已检查 `data.code` 字段，200 状态码不影响错误处理。可后续通过 `@ResponseStatus` 注解优化。
+**解决**：在返回 `ApiResponse` 时需同时设置 HTTP 状态码。但当前前端拦截器已检查 `data.code` 字段，200 状态码不影响错误处理。可后续通过
+`@ResponseStatus` 注解优化。
 
 ---
 
@@ -277,28 +291,28 @@ public void deleteArticle(Long id) {
 
 ## 六、问题速查表
 
-| 现象 | 关键词 | 根因 | 章节 |
-|---|---|---|---|
-| Maven 构建失败 | ClassNotFoundException | 中文路径 | 1.1 |
-| 前端白屏 | prototype | CJS → ESM | 2.1 |
-| 删除不生效 | deleted=0 未变 | MP 逻辑删除 | 4.1 |
-| 重启后全部 500 | token 无效 | JWT 配置冲突 | 4.2 |
-| 布局错位 | 标签在中间 | DOM 顺序 | 3.1 |
-| API 错误无提示 | 静默失败 | catch 吞噬 | 3.3 |
-| dev server 自动换端口 | 5175 | 残留进程 | 1.4 |
+| 现象               | 关键词                    | 根因        | 章节  |
+|------------------|------------------------|-----------|-----|
+| Maven 构建失败       | ClassNotFoundException | 中文路径      | 1.1 |
+| 前端白屏             | prototype              | CJS → ESM | 2.1 |
+| 删除不生效            | deleted=0 未变           | MP 逻辑删除   | 4.1 |
+| 重启后全部 500        | token 无效               | JWT 配置冲突  | 4.2 |
+| 布局错位             | 标签在中间                  | DOM 顺序    | 3.1 |
+| API 错误无提示        | 静默失败                   | catch 吞噬  | 3.3 |
+| dev server 自动换端口 | 5175                   | 残留进程      | 1.4 |
 
 ---
 
 ## 七、设计决策记录
 
-| 决策 | 选项 A | 选项 B | 选择 | 原因 |
-|---|---|---|---|---|
-| 启动方式 | `spring-boot:run` | `exec:java` | exec:java | 中文路径 bug |
-| Markdown 编辑器 | `v-md-editor` | `bytemd` | bytemd | Vite ESM 兼容 |
-| 前端 Markdown 渲染 | 手写正则 | `markdown-it` | markdown-it | 准确性 & 可扩展 |
-| 后端 Markdown→HTML | 无 | `flexmark-all` | flexmark | Java 最成熟 |
-| 点赞模型 | 仅计数 | toggle 表 | toggle 表 | 防重复点赞 |
-| Token 模式 | 有状态 | JWT 无状态 | JWT 无状态 | 跨重启持久化 |
+| 决策               | 选项 A              | 选项 B           | 选择          | 原因          |
+|------------------|-------------------|----------------|-------------|-------------|
+| 启动方式             | `spring-boot:run` | `exec:java`    | exec:java   | 中文路径 bug    |
+| Markdown 编辑器     | `v-md-editor`     | `bytemd`       | bytemd      | Vite ESM 兼容 |
+| 前端 Markdown 渲染   | 手写正则              | `markdown-it`  | markdown-it | 准确性 & 可扩展   |
+| 后端 Markdown→HTML | 无                 | `flexmark-all` | flexmark    | Java 最成熟    |
+| 点赞模型             | 仅计数               | toggle 表       | toggle 表    | 防重复点赞       |
+| Token 模式         | 有状态               | JWT 无状态        | JWT 无状态     | 跨重启持久化      |
 
 ---
 
@@ -310,7 +324,8 @@ public void deleteArticle(Long id) {
 
 **原因**：`GenericJackson2JsonRedisSerializer` 无法序列化 MyBatis-Plus CGLIB 代理对象，Jackson 尝试反射代理类内部字段时报错。
 
-**解决**：放弃 `@Cacheable` / `@CacheEvict` 注解，改用 `StringRedisTemplate` + Jackson `ObjectMapper.writeValueAsString()` 手动序列化。`ObjectMapper` 对 MyBatis 代理兼容性更好，且存 JSON 字符串方便调式。
+**解决**：放弃 `@Cacheable` / `@CacheEvict` 注解，改用 `StringRedisTemplate` + Jackson `ObjectMapper.writeValueAsString()`
+手动序列化。`ObjectMapper` 对 MyBatis 代理兼容性更好，且存 JSON 字符串方便调式。
 
 **教训**：Spring Cache 抽象不适合直接序列化 ORM 实体。缓存复杂对象时手动 JSON 序列化更灵活可控。
 
@@ -336,17 +351,22 @@ public void deleteArticle(Long id) {
 
 **现象**：`@OperationLog` 注解编译报错"单类型导入已定义了同名的简单类"。
 
-**原因**：`OperationLog.java` 被同时用作实体类（`log.entity.OperationLog`）和注解名（`log.annotation.OperationLog`），Java import 无法区分。
+**原因**：`OperationLog.java` 被同时用作实体类（`log.entity.OperationLog`）和注解名（`log.annotation.OperationLog`），Java
+import 无法区分。
 
 **解决**：注解改名为 `@OpLog`，避免与实体类同名。
 
 ### 8.5 spring.jackson.date-format 对 LocalDateTime 无效
 
-**现象**：`spring.jackson.date-format: yyyy-MM-dd HH:mm:ss` 配置后，接口返回的 `LocalDateTime` 字段仍为 ISO 格式 `2026-05-21T16:33:16`。
+**现象**：`spring.jackson.date-format: yyyy-MM-dd HH:mm:ss` 配置后，接口返回的 `LocalDateTime` 字段仍为 ISO 格式
+`2026-05-21T16:33:16`。
 
-**原因**：`spring.jackson.date-format` 底层用 `SimpleDateFormat`，只对 `java.util.Date` 有效。`LocalDateTime` 由 `JavaTimeModule` 控制，`date-format` 属性无法覆盖其默认的 ISO 格式。
+**原因**：`spring.jackson.date-format` 底层用 `SimpleDateFormat`，只对 `java.util.Date` 有效。`LocalDateTime` 由
+`JavaTimeModule` 控制，`date-format` 属性无法覆盖其默认的 ISO 格式。
 
-**解决**：创建 `Jackson2ObjectMapperBuilderCustomizer` Bean，在 `JavaTimeModule` 上注册 `LocalDateTimeSerializer(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))`。`@PostConstruct` 方式太晚（MVC 已拿到 ObjectMapper），必须用 Customizer。
+**解决**：创建 `Jackson2ObjectMapperBuilderCustomizer` Bean，在 `JavaTimeModule` 上注册
+`LocalDateTimeSerializer(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))`。`@PostConstruct` 方式太晚（MVC 已拿到
+ObjectMapper），必须用 Customizer。
 
 **教训**：Spring Boot 的 Jackson 自动配置对不同日期类型的覆盖范围不同，`java.time` 包的类型需要显式注册序列化器。
 
@@ -354,9 +374,11 @@ public void deleteArticle(Long id) {
 
 **现象**：`@PostConstruct` 方式注册 `LocalDateTimeSerializer` 无效。
 
-**原因**：`@PostConstruct` 在 Bean 初始化后执行，但 Spring MVC 的 `MappingJackson2HttpMessageConverter` 在更早阶段已获取 ObjectMapper 引用，后续修改不生效。
+**原因**：`@PostConstruct` 在 Bean 初始化后执行，但 Spring MVC 的 `MappingJackson2HttpMessageConverter` 在更早阶段已获取
+ObjectMapper 引用，后续修改不生效。
 
-**解决**：改为 `Jackson2ObjectMapperBuilderCustomizer` Bean，Spring Boot 自动配置阶段就会调用，保证 ObjectMapper 创建时就带正确的序列化器。
+**解决**：改为 `Jackson2ObjectMapperBuilderCustomizer` Bean，Spring Boot 自动配置阶段就会调用，保证 ObjectMapper
+创建时就带正确的序列化器。
 
 ### 8.7 Sa-Token 权限接口返回空列表
 
@@ -364,13 +386,15 @@ public void deleteArticle(Long id) {
 
 **原因**：`StpInterfaceImpl.getPermissionList()` 返回 `Collections.emptyList()`，注释写"当前未启用细粒度权限"。
 
-**解决**：实现联表查询：`sys_user_role` → 角色 ID → `sys_role_permission` + `sys_permission` → 权限码列表。新增 `SysRolePermissionMapper.getPermissionCodesByRoleIds()`。
+**解决**：实现联表查询：`sys_user_role` → 角色 ID → `sys_role_permission` + `sys_permission` → 权限码列表。新增
+`SysRolePermissionMapper.getPermissionCodesByRoleIds()`。
 
 ### 8.8 YAML 重复 key 导致配置不生效
 
 **现象**：`spring.jackson.date-format` 和 `spring.servlet.multipart` 配置写入后不生效。
 
 **原因**：
+
 - `jackson` 被错误缩进到 `sa-token:` 下面，成为 sa-token 的子属性
 - `spring.servlet.multipart:` 写成了顶级 key（0 缩进），而非 `spring:` 的子属性
 - YAML 缩进错误不会报错，只会静默纳入错误的父节点
@@ -385,15 +409,18 @@ public void deleteArticle(Long id) {
 
 **原因**：全局 `ObjectMapper` 的序列化器输出空格分隔格式，但默认 `LocalDateTimeDeserializer` 只认 ISO `T` 格式，读写格式不一致。
 
-**解决**：缓存专用 `ObjectMapper cacheMapper = new ObjectMapper().registerModule(new JavaTimeModule())`，与 API 的定制 `ObjectMapper` 隔离。缓存内用标准 ISO 格式，API 输出用自定义格式。
+**解决**：缓存专用 `ObjectMapper cacheMapper = new ObjectMapper().registerModule(new JavaTimeModule())`，与 API 的定制
+`ObjectMapper` 隔离。缓存内用标准 ISO 格式，API 输出用自定义格式。
 
 ### 8.10 ZSet 替代 String 缓存
 
 **现象**：热门文章缓存用 JSON String 存储整个 `List<Article>`，写入时需 `ObjectMapper` 序列化，读取需反序列化，日期格式、代理对象等问题反复出现。
 
-**解决**：改用 Redis ZSet `cache:hotArticles`，member 只存 `articleId`（Long），score 存 `viewCount`。取 Top N 用 `ZREVRANGE`，拿到 ID 后 `selectBatchIds` 查库。不再需要 ObjectMapper 参与缓存读写。
+**解决**：改用 Redis ZSet `cache:hotArticles`，member 只存 `articleId`（Long），score 存 `viewCount`。取 Top N 用 `ZREVRANGE`
+，拿到 ID 后 `selectBatchIds` 查库。不再需要 ObjectMapper 参与缓存读写。
 
 **优势**：
+
 - 零序列化——只存 Long ID，没有日期/代理问题
 - 实时排序——`ZADD` 更新阅读量即更新排名
 - 自然降级——缓存未命中查库重建 ZSet
@@ -446,21 +473,23 @@ const MyNode = {
 
 ### 9.2 ByteMD 分栏模式无法满足所见即所得需求
 
-**现象**：用户要求"插入图片直接出现在编辑框里，点击图片就能看到上传地址"，但 ByteMD 是分栏 Markdown 源码编辑器，图片显示为 `![alt](url)` 文本。
+**现象**：用户要求"插入图片直接出现在编辑框里，点击图片就能看到上传地址"，但 ByteMD 是分栏 Markdown 源码编辑器，图片显示为
+`![alt](url)` 文本。
 
 **原因**：ByteMD 本质是 CodeMirror 代码编辑器 + 右侧渲染预览，不支持 WYSIWYG。用户需要的是富文本编辑器体验。
 
 **解决**：整个编辑器从 `@bytemd/vue-next` 迁移到 `@tiptap/vue-3`：
 
-| 对比 | ByteMD | Tiptap |
-|---|---|---|
-| 编辑模式 | Markdown 源码 + 预览分栏 | 单栏 WYSIWYG |
-| 图片显示 | `![](url)` 文本 | 图片直显 |
-| 图片缩放 | 不支持 | 自定义 NodeView 拖拽缩放 |
-| 图片说明 | 不支持 | 自定义 caption 属性 |
-| 工具栏 | 无 | Bold/Italic/H1-H3/引用/代码/列表/链接/图片 |
+| 对比   | ByteMD             | Tiptap                           |
+|------|--------------------|----------------------------------|
+| 编辑模式 | Markdown 源码 + 预览分栏 | 单栏 WYSIWYG                       |
+| 图片显示 | `![](url)` 文本      | 图片直显                             |
+| 图片缩放 | 不支持                | 自定义 NodeView 拖拽缩放                |
+| 图片说明 | 不支持                | 自定义 caption 属性                   |
+| 工具栏  | 无                  | Bold/Italic/H1-H3/引用/代码/列表/链接/图片 |
 
 **安装**：
+
 ```bash
 npm install @tiptap/vue-3 @tiptap/starter-kit @tiptap/extension-image \
             @tiptap/extension-placeholder @tiptap/extension-link --legacy-peer-deps
@@ -471,11 +500,13 @@ npm install @tiptap/vue-3 @tiptap/starter-kit @tiptap/extension-image \
 **现象**：Tiptap 自带的 Image 扩展只能显示图片，不提供缩放功能。
 
 **解决**：创建自定义扩展 `ResizableImageExt`，继承 Image 并添加：
+
 - `width` 属性：存储缩放百分比（如 `"50%"`）
 - `caption` 属性：存储图片说明文字
 - `VueNodeViewRenderer`：自定义节点视图渲染
 
-图片包裹在 `resize: both; overflow: hidden` 的容器中，浏览器原生 resize 手柄实现拖拽缩放。缩放后通过 `updateAttributes({ width })` 将百分比持久化到节点属性。
+图片包裹在 `resize: both; overflow: hidden` 的容器中，浏览器原生 resize 手柄实现拖拽缩放。缩放后通过
+`updateAttributes({ width })` 将百分比持久化到节点属性。
 
 ### 9.4 flex 全屏布局中 `position: sticky` 无效
 
@@ -513,13 +544,16 @@ npm install @tiptap/vue-3 @tiptap/starter-kit @tiptap/extension-image \
 
 ### 9.7 `localStorage` → `sessionStorage` 又回退
 
-**背景**：用户先要求"管理端每次访问需要登录"，将 `localStorage` 改为 `sessionStorage` 实现关闭标签即清除登录态。后又要求"Redis 有凭证就不需要再登录"，又改回 `localStorage`。
+**背景**：用户先要求"管理端每次访问需要登录"，将 `localStorage` 改为 `sessionStorage` 实现关闭标签即清除登录态。后又要求"
+Redis 有凭证就不需要再登录"，又改回 `localStorage`。
 
-**教训**：会话持久化策略应由后端控制（Redis token 有效期），前端使用 `localStorage` 保持 token 不丢失。Token 是否有效由 Redis 决定，不在前端判断。
+**教训**：会话持久化策略应由后端控制（Redis token 有效期），前端使用 `localStorage` 保持 token 不丢失。Token 是否有效由 Redis
+决定，不在前端判断。
 
 ### 9.8 Sa-Token JWT + Redis：写入但不校验
 
 **现象**：
+
 1. 添加 `sa-token-redis-jackson` 依赖后，Redis 中能看到登录凭证
 2. 手动删除 Redis 中的 token key，刷新管理端页面仍能正常访问，未跳转登录
 
@@ -533,11 +567,15 @@ JWT 模式（加 sa-token-jwt）：
   请求 → 解析 JWT 签名 → 签名有效则通过 → 跳过 dao.get()
 ```
 
-JWT 自包含用户信息，Sa-Token 认为签名有效 = 登录有效，根本不会查 Redis。`sa-token-redis-jackson` 替换了 DAO 实现为 Redis，但 JWT 模式不调 DAO 的 `get()` 方法，所以 Redis 写入正常但不会被查询。
+JWT 自包含用户信息，Sa-Token 认为签名有效 = 登录有效，根本不会查 Redis。`sa-token-redis-jackson` 替换了 DAO 实现为 Redis，但
+JWT 模式不调 DAO 的 `get()` 方法，所以 Redis 写入正常但不会被查询。
 
-**解决**：新增 `TokenRedisInterceptor`，在 SaInterceptor 之后对每个 `/api/**` 请求执行 `redis.hasKey("Authorization:login:token:" + token)`。Redis 中 key 不存在 → 抛 `NotLoginException` → 前端 HTTP 拦截器捕获 401 → 清除 localStorage → 跳转登录。
+**解决**：新增 `TokenRedisInterceptor`，在 SaInterceptor 之后对每个 `/api/**` 请求执行
+`redis.hasKey("Authorization:login:token:" + token)`。Redis 中 key 不存在 → 抛 `NotLoginException` → 前端 HTTP 拦截器捕获
+401 → 清除 localStorage → 跳转登录。
 
 **核心代码**：
+
 ```java
 public class TokenRedisInterceptor implements HandlerInterceptor {
     private static final String PREFIX = "Authorization:login:token:";
@@ -555,6 +593,7 @@ public class TokenRedisInterceptor implements HandlerInterceptor {
 ```
 
 **前端配合**：`http.js` 新增错误拦截器：
+
 ```js
 http.interceptors.response.use(
   (res) => { ... },
@@ -581,18 +620,24 @@ http.interceptors.response.use(
 **现象**：`new NotLoginException("message")` 和 `NotLoginException.newInstance("type", "key")` 均编译失败。
 
 **解决**：Sa-Token 1.38 的 `NotLoginException` 需使用三参数构造函数：
+
 ```java
 new NotLoginException("admin", "token", "凭证已失效，请重新登录")
 ```
+
 三个参数分别为：loginType、loginKey、message。
 
 ### 9.11 Sa-Token 异常被全局 500 兜底
 
-**现象**：后端日志出现 `GlobalExceptionHandler: Unhandled error on /api/auth/me`，前端收到的响应是 `{"code":500,"message":"系统繁忙"}` 而非 401。
+**现象**：后端日志出现 `GlobalExceptionHandler: Unhandled error on /api/auth/me`，前端收到的响应是
+`{"code":500,"message":"系统繁忙"}` 而非 401。
 
-**原因**：`GlobalExceptionHandler` 只处理了 `IllegalArgumentException` 和 `MethodArgumentNotValidException`，Sa-Token 的 `NotLoginException` 和 `NotPermissionException` 落到 `Exception.class` 兜底处理，HTTP 状态码为 200（由 `@RestControllerAdvice` 默认行为决定），`data.code` 为 500。
+**原因**：`GlobalExceptionHandler` 只处理了 `IllegalArgumentException` 和 `MethodArgumentNotValidException`，Sa-Token 的
+`NotLoginException` 和 `NotPermissionException` 落到 `Exception.class` 兜底处理，HTTP 状态码为 200（由
+`@RestControllerAdvice` 默认行为决定），`data.code` 为 500。
 
 **解决**：在 `GlobalExceptionHandler` 中新增两个处理器：
+
 ```java
 @ExceptionHandler(NotLoginException.class)
 public ApiResponse<Void> handleNotLogin(NotLoginException e) {
@@ -605,7 +650,8 @@ public ApiResponse<Void> handleNotPermission(NotPermissionException e) {
 }
 ```
 
-**教训**：引入任何安全框架时，必须为其异常类型添加专用的 `@ExceptionHandler`，否则错误信息会被通用兜底淹没，且 HTTP 状态码不正确会导致前端拦截器无法识别。
+**教训**：引入任何安全框架时，必须为其异常类型添加专用的 `@ExceptionHandler`，否则错误信息会被通用兜底淹没，且 HTTP
+状态码不正确会导致前端拦截器无法识别。
 
 ### 9.12 `FileService.upload()` 目录硬编码
 
@@ -613,13 +659,15 @@ public ApiResponse<Void> handleNotPermission(NotPermissionException e) {
 
 **原因**：`FileService.upload()` 中 `String subDir = "avatars"` 硬编码。
 
-**解决**：新增 `upload(MultipartFile file, String subDir)` 重载方法，文章图片传 `"articles"`，头像继续用默认 `"avatars"`。`FileController` 新增可选参数 `@RequestParam(required = false) String subDir`。
+**解决**：新增 `upload(MultipartFile file, String subDir)` 重载方法，文章图片传 `"articles"`，头像继续用默认 `"avatars"`。
+`FileController` 新增可选参数 `@RequestParam(required = false) String subDir`。
 
 ### 9.13 取消编辑需清理本次会话上传的图片
 
 **现象**：用户在编辑页上传图片后点击"取消"，图片文件保留在后端但文章未保存，成为孤儿文件。
 
 **解决**：前端维护 `uploadedUrls` Set，追踪本次会话中上传的所有图片 URL：
+
 - 点击"取消"/"返回" → `Promise.all` 并发调用 `DELETE /api/file/delete` 清理
 - 保存成功 → 对比新旧 HTML 中的图片 URL，仅删不再引用的
 - 关闭标签/浏览器后退 → `onBeforeUnmount` 中 `fetch` + `keepalive: true` 尽力清理
@@ -629,8 +677,9 @@ public ApiResponse<Void> handleNotPermission(NotPermissionException e) {
 **现象**：全屏 flex 布局（`height: calc(100vh - 96px)`）中反复出现高度计算问题、sticky 失效、grid 塌陷等问题。
 
 **最终方案**：放弃强制全屏，改为编辑器置顶的自然滚动布局：
+
 - `.page` 移除固定高度约束
-- 编辑器设置 `height: 65vh; min-height: 550px; max-height: 80vh` 
+- 编辑器设置 `height: 65vh; min-height: 550px; max-height: 80vh`
 - 发布设置和基本信息在编辑器下方自然滚动
 - 编辑体验更好，布局更稳定
 
@@ -641,23 +690,24 @@ public ApiResponse<Void> handleNotPermission(NotPermissionException e) {
 **背景**：Tiptap 输出 HTML 而非 Markdown，`contentMd` 字段现在存储的是 HTML。
 
 **兼容方案**：
+
 - 后端 `ContentService.mdToHtml()` 检测内容是否以 `<` 开头，是则跳过 Flexmark 转换直接透传
 - 前端 `ArticleDetailView.vue` 的 markdown-it 配置 `html: true`，HTML 内容直接透传渲染
 - 旧文章（Markdown）和新文章（HTML）在同一个字段中共存，前端无需改动
 
 ### 9.16 问题速查表（第三阶段）
 
-| 现象 | 关键词 | 根因 | 章节 |
-|---|---|---|---|
-| NodeView 不渲染 | 编辑器空白 | template 字符串不编译 | 9.1 |
-| 图片无法直接显示 | 分栏编辑 | ByteMD 源码编辑器 | 9.2 |
-| 图片无法缩放 | resize 不生效 | Image 扩展无此功能 | 9.3 |
-| 侧边栏位置错误 | sticky 偏移 | 页面高度固定无滚动 | 9.4 |
-| 编辑器高度为 0 | 消失不见 | align-items: start | 9.5 |
-| 编辑器消失 | height:0 不生效 | ByteMD JS 覆盖 CSS | 9.6 |
-| 删 Redis key 仍能访问 | 登录不失效 | JWT 不查 DAO | 9.8 |
-| StpLogicJwtForSimple 找不到 | 编译失败 | 1.38 无此类 | 9.9 |
-| NotLoginException 编译失败 | 构造函数不匹配 | 需三参数 | 9.10 |
-| /api/auth/me 返回 500 | 异常兜底 | 缺 Sa-Token 异常处理器 | 9.11 |
-| 图片存到 avatars 目录 | 目录混乱 | subDir 硬编码 | 9.12 |
-| 取消编辑留孤儿文件 | 文件残留 | 未追踪上传 | 9.13 |
+| 现象                       | 关键词          | 根因                 | 章节   |
+|--------------------------|--------------|--------------------|------|
+| NodeView 不渲染             | 编辑器空白        | template 字符串不编译    | 9.1  |
+| 图片无法直接显示                 | 分栏编辑         | ByteMD 源码编辑器       | 9.2  |
+| 图片无法缩放                   | resize 不生效   | Image 扩展无此功能       | 9.3  |
+| 侧边栏位置错误                  | sticky 偏移    | 页面高度固定无滚动          | 9.4  |
+| 编辑器高度为 0                 | 消失不见         | align-items: start | 9.5  |
+| 编辑器消失                    | height:0 不生效 | ByteMD JS 覆盖 CSS   | 9.6  |
+| 删 Redis key 仍能访问         | 登录不失效        | JWT 不查 DAO         | 9.8  |
+| StpLogicJwtForSimple 找不到 | 编译失败         | 1.38 无此类           | 9.9  |
+| NotLoginException 编译失败   | 构造函数不匹配      | 需三参数               | 9.10 |
+| /api/auth/me 返回 500      | 异常兜底         | 缺 Sa-Token 异常处理器   | 9.11 |
+| 图片存到 avatars 目录          | 目录混乱         | subDir 硬编码         | 9.12 |
+| 取消编辑留孤儿文件                | 文件残留         | 未追踪上传              | 9.13 |

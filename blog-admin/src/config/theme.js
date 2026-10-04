@@ -1,18 +1,18 @@
-import { adminAssets } from './assets'
+import {adminAssets} from './assets'
 
 export const adminTheme = {
-  brand: {
-    name: 'Blog Admin',
-    subtitle: '后台管理中心',
-    mark: adminAssets.icons.brand
-  },
-  image: {
-    loginBackground: adminAssets.backgrounds.login
-  },
-  assets: adminAssets,
-  colors: {
-    accent: '#6c9fd4',
-    accent2: '#c4a0d8',
-    accent3: '#f0a8b8'
-  }
+    brand: {
+        name: 'Javerry',
+        subtitle: '博客内容管理',
+        mark: adminAssets.icons.brand
+    },
+    image: {
+        loginBackground: adminAssets.backgrounds.login
+    },
+    assets: adminAssets,
+    colors: {
+        accent: '#4F46E5',
+        accent2: '#A5B4FC',
+        accent3: '#4F46E5'
+    }
 }
