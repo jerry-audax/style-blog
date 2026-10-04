@@ -25,6 +25,17 @@ The production stack builds five images: the Spring Boot API, the publication wo
 
 The public site is on `BLOG_HTTP_PORT` and the admin site is on `BLOG_ADMIN_PORT`. Only those two ports are published. The blog API and publication worker stay on the internal Compose network. Set `DB_URL` to a hostname reachable from a container; on Linux Docker hosts, `host.docker.internal` is provided by the Compose file.
 
+If the server blocks TCP between containers on a Docker bridge network, use the host-gateway override. It publishes the API, publication worker, and Redis on the host, then routes service traffic through `host.docker.internal`:
+
+```bash
+docker compose --env-file deploy/.env \
+  -f docker-compose.prod.yml -f docker-compose.host-gateway.yml config --quiet
+docker compose --env-file deploy/.env \
+  -f docker-compose.prod.yml -f docker-compose.host-gateway.yml up -d
+```
+
+The override defaults to host ports `8080` (API), `8081` (publication worker), and `6380` (Redis). Change them with `BLOG_SERVER_PORT`, `BLOG_PUBLISHER_PORT`, and `BLOG_REDIS_PORT` in `deploy/.env` when needed.
+
 ## Upgrade and rollback
 
 Build a new image tag, start it with the same `deploy/.env`, and check `docker compose ... ps` plus the public site before removing old images. Do not run a database migration automatically during an application upgrade. Back up PostgreSQL and the `blog-publication` volume before a rollback.
