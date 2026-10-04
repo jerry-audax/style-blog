@@ -5,11 +5,13 @@ dist/
 uploads/
 node_modules/
 target/
+.artifacts/
 *.log
 .idea/
 
 docs/
 data/
+/music/
 **/src/test/
 **/src/__tests__/
 *.key
@@ -17,3 +19,10 @@ data/
 *.p12
 *.jks
 *.keystore
+blog-web/.runtime/
+blog-web/.test-publication-*/
+blog-web/env/
+AGENTS.md
+CLAUDE.md
+.codex/
+!deploy/.env.example

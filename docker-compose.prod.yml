@@ -1,0 +1,103 @@
+services:
+  redis:
+    image: redis:7-alpine
+    command: redis-server --port 6380 --appendonly yes
+    restart: unless-stopped
+    expose:
+      - "6380"
+    volumes:
+      - blog-redis:/data
+
+  blog-server:
+    build:
+      context: ./blog-server
+    image: ${BLOG_SERVER_IMAGE:-blog-system-server:latest}
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    expose:
+      - "8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      AI_ENABLED: ${AI_ENABLED:-false}
+      AI_INITIALIZE_ON_STARTUP: ${AI_INITIALIZE_ON_STARTUP:-false}
+      BLOG_OWNER_PHONE: ${BLOG_OWNER_PHONE:?Set BLOG_OWNER_PHONE}
+      PUBLICATION_BASE_URL: http://blog-publisher:8081
+      PUBLICATION_API_TOKEN: ${PUBLICATION_API_TOKEN:?Set a random token of at least 32 characters}
+      MUSIC_PLAYLIST_ID: ${MUSIC_PLAYLIST_ID:-939817038}
+      MUSIC_STATE_DIRECTORY: /var/lib/blog-music
+      DB_URL: ${DB_URL:?Set DB_URL to the existing PostgreSQL blog_system database}
+      DB_USERNAME: ${DB_USERNAME:?Set DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+      IMGBED_BASE_URL: ${IMGBED_BASE_URL:-https://cloudflare-imgbed-6of.pages.dev}
+      IMGBED_API_TOKEN: ${IMGBED_API_TOKEN:-}
+      IMGBED_UPLOAD_CHANNEL: ${IMGBED_UPLOAD_CHANNEL:-telegram}
+      IMGBED_CHANNEL_NAME: ${IMGBED_CHANNEL_NAME:-TelegramBot}
+      IMGBED_ROOT_FOLDER: ${IMGBED_ROOT_FOLDER:-blog}
+      REDIS_HOST: redis
+      REDIS_PORT: 6380
+      REDIS_DATABASE: ${REDIS_DATABASE:-0}
+      JWT_SECRET: ${JWT_SECRET:?Set a strong random JWT_SECRET}
+    volumes:
+      - ${MUSIC_STATE_HOST_DIRECTORY:-./data/music-docker}:/var/lib/blog-music
+
+  blog-publisher:
+    build:
+      context: ./blog-web
+      target: publisher
+      args:
+        BLOG_SITE_URL: ${BLOG_SITE_URL:?Set BLOG_SITE_URL}
+    image: ${BLOG_PUBLISHER_IMAGE:-blog-system-publisher:latest}
+    restart: unless-stopped
+    depends_on:
+      - blog-server
+    expose:
+      - "8081"
+    environment:
+      BLOG_API_URL: http://blog-server:8080
+      BLOG_SITE_URL: ${BLOG_SITE_URL:?Set BLOG_SITE_URL}
+      PUBLICATION_API_TOKEN: ${PUBLICATION_API_TOKEN:?Set a random token of at least 32 characters}
+      PUBLICATION_STATE_DIRECTORY: /var/lib/blog-publication
+      PUBLICATION_PORT: 8081
+    volumes:
+      - blog-publication:/var/lib/blog-publication
+
+  blog-web:
+    build:
+      context: ./blog-web
+      args:
+        BLOG_SITE_URL: ${BLOG_SITE_URL:?Set BLOG_SITE_URL}
+    image: ${BLOG_WEB_IMAGE:-blog-system-web:latest}
+    restart: unless-stopped
+    depends_on:
+      - blog-publisher
+      - blog-server
+    environment:
+      BACKEND_URL: http://blog-server:8080
+      PUBLICATION_URL: http://blog-publisher:8081
+      NGINX_ENVSUBST_VARS: '$$BACKEND_URL $$PUBLICATION_URL'
+    ports:
+      - "${BLOG_HTTP_PORT:-80}:80"
+
+  blog-admin:
+    build:
+      context: ./blog-admin
+      args:
+        VITE_BLOG_OWNER_PHONE: ${BLOG_OWNER_PHONE:?Set BLOG_OWNER_PHONE}
+        VITE_BLOG_SITE_URL: ${BLOG_SITE_URL:?Set BLOG_SITE_URL}
+    image: ${BLOG_ADMIN_IMAGE:-blog-system-admin:latest}
+    restart: unless-stopped
+    depends_on:
+      - blog-server
+    environment:
+      BACKEND_URL: http://blog-server:8080
+      NGINX_ENVSUBST_VARS: '$$BACKEND_URL'
+    ports:
+      - "${BLOG_ADMIN_PORT:-5174}:80"
+
+volumes:
+  blog-redis:
+  blog-publication:

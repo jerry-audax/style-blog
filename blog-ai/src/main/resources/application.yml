@@ -1,0 +1,10 @@
+server:
+  port: ${AI_SERVER_PORT:8090}
+spring:
+  application:
+    name: blog-ai
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

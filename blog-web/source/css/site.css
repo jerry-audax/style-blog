@@ -1,0 +1,659 @@
+/* Site integration and the requested mini disc. The upstream theme is not forked. */
+/* Screenshot background, sampled #1B1722. Layer scale follows the original
+   theme: web_bg -999, decorative canvas -998, existing UI/overlays unchanged. */
+:root {
+    --site-background: #f7f9fe;
+    --site-accent-foreground: #ffffff;
+    --site-particle-opacity: 0.55;
+}
+
+/* Complete the theme palette: upstream 1.7.0 still hard-codes several blue /
+   gold derivatives. Main colors come from theme_color, not duplicate hexes. */
+html[data-theme="light"] {
+    --anzhiyu-theme-deep: #3730a3;
+    --anzhiyu-theme-op: #4f46e523;
+    --anzhiyu-theme-op-deep: #4f46e5dd;
+}
+
+html[data-theme="dark"] {
+    --site-background: #1b1722;
+    --site-card-surface: rgb(14 14 17 / 0.62);
+    --site-reading-surface: rgb(14 14 17 / 0.8);
+    --site-secondary-surface: rgb(23 23 28 / 0.7);
+    --site-article-surface: rgb(14 14 17 / 0.48);
+    --site-popover-surface: rgb(14 14 17 / 0.96);
+    /* Foreground glass layers used by the Galaxy presentation.  Keep these
+       separate from the legacy theme variables above so the upstream theme
+       can still provide its normal contrast in menus and dialogs. */
+    --site-glass-surface: transparent;
+    --site-glass-strong-surface: transparent;
+    --site-accent-foreground: #17121c;
+    --anzhiyu-theme-deep: #818cf8;
+    --anzhiyu-theme-op: #a5b4fc23;
+    --anzhiyu-theme-op-deep: #a5b4fcdd;
+    --anzhiyu-background: var(--site-background);
+    --anzhiyu-card-bg: var(--site-card-surface);
+    --card-bg: var(--site-card-surface);
+    --sidebar-bg: var(--site-reading-surface);
+    --anzhiyu-secondbg: var(--site-secondary-surface);
+    --anzhiyu-card-border: #45414c;
+    --anzhiyu-fontcolor: #f7f7fa;
+    --font-color: #f7f7fa;
+    --anzhiyu-secondtext: #e1ddea;
+}
+
+html[data-theme] {
+    --anzhiyu-hovertext: var(--anzhiyu-main);
+    --anzhiyu-lighttext: var(--anzhiyu-main);
+    --anzhiyu-meta-theme-color: var(--site-background);
+    --btn-bg: var(--anzhiyu-main);
+    --btn-hover-color: var(--anzhiyu-theme-deep);
+    --btn-color: var(--site-accent-foreground);
+}
+
+body {
+    isolation: isolate;
+    /* Keep the theme's negative z-index background layers visible. An opaque
+       body background would paint over both #web_bg and the Galaxy canvas. */
+    background: transparent;
+}
+
+body.site-surprise-open { overflow: hidden; }
+.site-surprise-overlay { position: fixed; inset: 0; z-index: 10050; display: grid; place-items: center; padding: 24px; background: rgb(0 0 0 / .82); backdrop-filter: blur(10px); }
+.site-surprise-dialog { width: min(620px, 100%); padding: 32px; border: 1px solid rgb(255 255 255 / .18); border-radius: 20px; background: rgb(20 20 24 / .94); color: #f5f5f7; box-shadow: 0 24px 80px rgb(0 0 0 / .42); position: relative; }
+.site-surprise-overlay.is-playing { padding: 0; background: #000; backdrop-filter: none; }
+.site-surprise-overlay.is-playing .site-surprise-dialog { width: 100%; height: 100%; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; display: grid; place-items: center; }
+.site-surprise-overlay.is-playing .site-surprise-kicker,
+.site-surprise-overlay.is-playing .site-surprise-dialog h2,
+.site-surprise-overlay.is-playing .site-surprise-copy,
+.site-surprise-overlay.is-playing .site-surprise-actions,
+.site-surprise-overlay.is-playing .site-surprise-error { display: none; }
+.site-surprise-close { position: absolute; right: 16px; top: 12px; border: 0; background: transparent; color: inherit; font-size: 28px; cursor: pointer; }
+.site-surprise-kicker { color: #f7b955; font-size: .85rem; margin: 0 0 8px; }
+.site-surprise-dialog h2 { margin: 0 0 10px; }
+.site-surprise-copy { color: #c7c7d1; }
+.site-surprise-actions { display: flex; gap: 12px; margin-top: 24px; }
+.site-surprise-actions button { border: 1px solid #f7b955; border-radius: 999px; padding: 11px 20px; background: #f7b955; color: #1b1722; cursor: pointer; font-weight: 700; }
+.site-surprise-video { width: 100%; max-height: 64vh; margin-top: 20px; border-radius: 12px; background: #000; }
+.site-surprise-overlay.is-playing .site-surprise-video { width: 100vw; height: 100vh; max-height: none; margin: 0; border-radius: 0; object-fit: contain; }
+.site-surprise-error { color: #ff9e9e; }
+
+#web_bg {
+    background: var(--site-background);
+}
+
+#site-particles-background {
+    position: fixed;
+    inset: 0;
+    z-index: -998;
+    overflow: hidden;
+    pointer-events: none;
+    background:
+        radial-gradient(circle at 50% 16%, rgb(62 70 82 / 0.09), transparent 42%),
+        radial-gradient(circle at 86% 82%, rgb(58 48 67 / 0.07), transparent 38%),
+        #0a0b0d;
+}
+
+#site-particles-background canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    /* Black translucent panels reveal the particle backdrop. Balance only
+       this decorative layer's brightness; never fade foreground content. */
+    opacity: var(--site-particle-opacity);
+}
+
+html[data-theme="light"] #site-particles-background {
+    display: none;
+}
+
+/* Cover the page as soon as a surprise choice is made. Unmuted autoplay may
+   be rejected by a browser policy, but the native player remains full-screen
+   and exposes its own play button for a manual start. */
+.site-surprise-overlay.is-fullscreen { padding: 0; background: #000; backdrop-filter: none; }
+.site-surprise-overlay.is-fullscreen .site-surprise-dialog { width: 100%; height: 100%; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; display: grid; place-items: center; }
+.site-surprise-overlay.is-fullscreen .site-surprise-video { width: 100vw; height: 100vh; max-height: none; margin: 0; border-radius: 0; object-fit: contain; }
+
+/* Restore a visible black translucent surface, not whole-component opacity.
+   Keep original theme layouts, artwork and controls without forking the theme. */
+html[data-theme="dark"] #recent-posts > .recent-post-item,
+html[data-theme="dark"] #aside-content .card-widget,
+html[data-theme="dark"] #random-banner,
+html[data-theme="dark"] #swiper_container,
+html[data-theme="dark"] #categoryBar,
+html[data-theme="dark"] .article-sort-item,
+html[data-theme="dark"] .layout > .recent-posts .pagination > *,
+html[data-theme="dark"] .category-lists,
+html[data-theme="dark"] .tag-cloud-list,
+html[data-theme="dark"] .relatedPosts,
+html[data-theme="dark"] .post-copyright,
+html[data-theme="dark"] .site-card-group {
+    background: var(--site-card-surface);
+    backdrop-filter: blur(10px);
+}
+
+html[data-theme="dark"] div#post,
+html[data-theme="dark"] div#page,
+html[data-theme="dark"] #console .console-card,
+html[data-theme="dark"] #sidebar #sidebar-menus,
+html[data-theme="dark"] #page-header #nav,
+html[data-theme="dark"] #page-header.nav-fixed > #nav,
+html[data-theme="dark"] #page-header.not-top-img > #nav {
+    background: var(--site-reading-surface);
+    backdrop-filter: blur(12px);
+}
+
+/* Article-facing surfaces are intentionally lighter than the navigation and
+   utility chrome, so the subdued Galaxy field remains visible through them. */
+html[data-theme="dark"] #recent-posts > .recent-post-item,
+html[data-theme="dark"] div#post,
+html[data-theme="dark"] div#page,
+html[data-theme="dark"] #categoryBar,
+html[data-theme="dark"] .article-sort-item,
+html[data-theme="dark"] .layout > .recent-posts .pagination > *,
+html[data-theme="dark"] .category-lists,
+html[data-theme="dark"] .tag-cloud-list,
+html[data-theme="dark"] .relatedPosts,
+html[data-theme="dark"] .post-copyright,
+html[data-theme="dark"] .site-card-group {
+    background-color: var(--site-article-surface);
+    backdrop-filter: blur(10px);
+}
+
+/* Floating utility UI sits over other text, not just the particle backdrop.
+   Keep its own contrast floor while display cards reveal the background. */
+html[data-theme="dark"] #local-search .search-dialog,
+html[data-theme="dark"] #nav .menus_item_child,
+html[data-theme="dark"] #rightMenu {
+    background: var(--site-popover-surface);
+}
+
+html[data-theme] #nav .menus_items .menus_item .menus_item_child li:hover a {
+    color: var(--site-accent-foreground) !important;
+}
+
+/* The new dark accent is light, so the upstream white selection text cannot
+   be reused. Apply the paired foreground only on accent-filled UI states. */
+html[data-theme] #pagination .page-number.current,
+html[data-theme] #random-banner #random-hover,
+html[data-theme] .catalog-list-item.select a,
+html[data-theme] .catalog-list-item:hover a,
+html[data-theme] #nav .menus_item:hover > a.site-page,
+html[data-theme] #nav .back-home-button:hover,
+html[data-theme] #page-header #nav #nav-right .nav-button:hover a,
+html[data-theme] #page-header #nav #nav-right .nav-button:hover i,
+html[data-theme] #page-header #nav #nav-right #toggle-menu a:hover,
+html[data-theme] #console .card-tag-cloud a:hover,
+html[data-theme] #console .console-card.history .card-archive-list-link:hover,
+html[data-theme] #rightMenu .rightMenu-group .rightMenu-item:hover,
+html[data-theme] #rightMenu .rightMenu-group .rightMenu-item:hover a {
+    color: var(--site-accent-foreground) !important;
+}
+
+html[data-theme="dark"] #aside-content .card-info::before {
+    background: none;
+}
+
+html[data-theme="dark"] #aside-content .author-info__desc {
+    color: var(--anzhiyu-secondtext);
+    opacity: 1;
+}
+
+html[data-theme="dark"] #console .console-mask {
+    background: rgb(14 14 17 / 0.88);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+html[data-theme="dark"] #footer::before {
+    background: transparent;
+}
+
+/* Keep the music page's original composition and foreground cover intact.
+   Its decorative blurred cover must not obscure the global dark background. */
+html[data-theme="dark"] body[data-type="music"] div#page {
+    background: transparent;
+}
+
+html[data-theme="dark"] #an_music_bg {
+    opacity: 0.3;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+    html[data-theme="dark"] {
+        --site-card-surface: #0e0e11;
+        --site-reading-surface: #0e0e11;
+        --site-secondary-surface: #17171c;
+        --site-article-surface: #0e0e11;
+        --site-glass-surface: #0e0e11;
+        --site-glass-strong-surface: #0e0e11;
+    }
+}
+
+/* Desktop home uses a two-column card grid in the upstream theme. The blog
+   reads better as a chronological feed, so keep every article in one full
+   width horizontal row (the mobile layout remains the theme's stacked card). */
+@media screen and (min-width: 1201px) {
+    #recent-posts {
+        display: flex !important;
+        flex-direction: column !important;
+        flex-wrap: nowrap !important;
+        justify-content: flex-start !important;
+        gap: 20px;
+    }
+
+    #recent-posts > .recent-post-item {
+        width: 100% !important;
+        height: 18em !important;
+        margin-top: 0 !important;
+        flex-direction: row !important;
+    }
+
+    #recent-posts > .recent-post-item .post_cover {
+        width: 42% !important;
+        height: 100% !important;
+    }
+
+    #recent-posts > .recent-post-item > .recent-post-info {
+        width: 58% !important;
+        height: 100% !important;
+    }
+
+    #recent-posts > .recent-post-item .recent-post-info > .content {
+        display: -webkit-box !important;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 3;
+        overflow: hidden;
+    }
+}
+
+/* The category strip in the screenshot is part of the theme's #category-bar,
+   not #categoryBar. Give it the same quiet glass treatment as article rows. */
+html[data-theme="dark"] #category-bar.category-bar {
+    background: rgb(10 11 13 / 0.52) !important;
+    border: 1px solid rgb(190 184 210 / 0.2) !important;
+    box-shadow: none !important;
+    backdrop-filter: blur(12px);
+}
+
+html[data-theme="dark"] #category-bar .catalog-list-item a,
+html[data-theme="dark"] #category-bar .category-bar-more {
+    color: rgb(238 236 245 / 0.86);
+}
+
+html[data-theme="dark"] #category-bar .catalog-list-item.select a,
+html[data-theme="dark"] #category-bar .catalog-list-item:hover a {
+    background: rgb(151 143 174 / 0.24) !important;
+    color: #fff !important;
+}
+
+/* The Galaxy field is intentionally part of the composition.  Override the
+   theme's opaque card fills with a translucent color layer (rather than
+   applying opacity to the whole component, which would also fade text and
+   controls).  This rule is kept late in the stylesheet so it wins over the
+   upstream theme and the compatibility surfaces above. */
+html[data-theme="dark"] #page-header #nav,
+html[data-theme="dark"] #page-header.nav-fixed > #nav,
+html[data-theme="dark"] #page-header.not-top-img > #nav,
+html[data-theme="dark"] #aside-content .card-widget,
+html[data-theme="dark"] .card-widget,
+html[data-theme="dark"] #sidebar #sidebar-menus,
+html[data-theme="dark"] #console .console-card,
+html[data-theme="dark"] #recent-posts > .recent-post-item,
+html[data-theme="dark"] #random-banner,
+html[data-theme="dark"] #swiper_container,
+html[data-theme="dark"] #categoryBar,
+html[data-theme="dark"] .article-sort-item,
+html[data-theme="dark"] .layout > .recent-posts .pagination > *,
+html[data-theme="dark"] .category-lists,
+html[data-theme="dark"] .tag-cloud-list,
+html[data-theme="dark"] .relatedPosts,
+html[data-theme="dark"] .post-copyright,
+html[data-theme="dark"] .site-card-group,
+html[data-theme="dark"] #category-bar.category-bar,
+html[data-theme="dark"] #local-search .search-dialog,
+html[data-theme="dark"] #nav .menus_item_child,
+html[data-theme="dark"] #rightMenu {
+    background-color: var(--site-glass-surface) !important;
+    border-color: rgb(190 184 210 / 0.16) !important;
+    backdrop-filter: blur(12px);
+}
+
+/* Reading surfaces need a little more contrast for long-form text while still
+   allowing the star field to remain visible behind the panel. */
+html[data-theme="dark"] div#post,
+html[data-theme="dark"] div#page {
+    background-color: var(--site-glass-strong-surface) !important;
+    border-color: rgb(190 184 210 / 0.16) !important;
+    backdrop-filter: blur(12px);
+}
+
+/* Click feedback: above normal content/nav (<=101), below the theme's
+   right-menu (10001). A clipped, inert overlay never changes page layout. */
+#site-click-effect {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    overflow: hidden;
+    contain: layout style paint;
+}
+
+#site-click-effect, #site-click-effect * {
+    pointer-events: none;
+}
+
+.site-click-burst {
+    position: absolute;
+}
+
+.site-click-ball {
+    position: absolute;
+    left: calc(var(--ball-size) / -2);
+    top: calc(var(--ball-size) / -2);
+    display: block;
+    width: var(--ball-size);
+    height: var(--ball-size);
+    border-radius: 50%;
+    animation: site-click-ball-burst var(--burst-duration) ease-out both;
+}
+
+@keyframes site-click-ball-burst {
+    0% {
+        transform: translate3d(0, 0, 0) scale(1);
+        opacity: 1;
+    }
+    80% {
+        opacity: 1;
+    }
+    100% {
+        transform: translate3d(var(--ball-x), var(--ball-y), 0) scale(0);
+        opacity: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #site-click-effect {
+        display: none;
+    }
+
+    .site-click-ball {
+        animation: none;
+    }
+}
+
+#recent-posts {
+    scroll-margin-top: 88px;
+}
+
+.site-music-state {
+    padding: 24px;
+    color: var(--anzhiyu-fontcolor);
+    background: var(--anzhiyu-card-bg);
+    border: var(--style-border);
+    border-radius: 12px;
+}
+
+.site-music-state[hidden] {
+    display: none;
+}
+
+.site-music-state a {
+    color: var(--anzhiyu-main);
+}
+
+.site-music-state button {
+    margin-right: 16px;
+    padding: 8px 16px;
+    color: var(--anzhiyu-fontcolor);
+    background: var(--anzhiyu-card-bg);
+    border: var(--style-border);
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+body[data-type="music"] #nav-totop {
+    display: none;
+}
+
+/* Only the music page owns the seek/list surface. The persistent host is also
+   used by the theme console, whose expanded-player rules must not reveal it. */
+#nav-music .aplayer,
+#nav-music > meting-js,
+#nav-music #nav-music-hoverTips,
+#nav-music #console-music-bg {
+    display: none !important;
+}
+
+body:not([data-type="music"]) #nav-music {
+    display: flex !important;
+    position: fixed !important;
+    width: 60px !important;
+    height: 60px !important;
+    inset: auto auto 20px 20px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 50% !important;
+    overflow: visible;
+    background: transparent !important;
+    animation: none;
+    box-shadow: var(--anzhiyu-shadow-border);
+}
+
+body[data-type="music"] #nav-music {
+    display: none !important;
+}
+
+#site-music-disc {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--anzhiyu-card-border);
+    border-radius: 50%;
+    background: repeating-radial-gradient(circle, #202126 0 2px, #303138 3px 4px);
+    color: var(--anzhiyu-white);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+#site-music-disc:disabled {
+    cursor: wait;
+    opacity: 0.6;
+}
+
+#site-music-disc:active:not(:disabled) {
+    transform: scale(0.96);
+}
+
+.site-music-disc-art {
+    position: absolute;
+    inset: 9px;
+    border-radius: 50%;
+    background-color: var(--anzhiyu-main);
+    background-position: center;
+    background-size: cover;
+    animation: site-disc-spin 20s linear infinite;
+    animation-play-state: paused;
+}
+
+#nav-music.playing .site-music-disc-art {
+    animation-play-state: running;
+}
+
+.site-music-disc-control {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border: 1px solid rgb(255 255 255 / 0.65);
+    border-radius: 50%;
+    background: rgb(20 21 25 / 0.88);
+    color: #f9fafb;
+    font-size: 12px;
+}
+
+@keyframes site-disc-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (max-width: 768px) {
+    body:not([data-type="music"]) #nav-music {
+        width: 52px !important;
+        height: 52px !important;
+        bottom: 16px !important;
+        left: 16px !important;
+    }
+
+    /* Original mobile drawer colors/layout, using APlayer's actual show/hide
+       semantics. Upstream hides opacity and reverses bottom for list-hide. */
+    #anMusic-page #anMusic-page-meting .aplayer .aplayer-list {
+        bottom: 0;
+        opacity: 1;
+        max-height: calc(60dvh + 30px);
+    }
+
+    #anMusic-page #anMusic-page-meting .aplayer .aplayer-list.aplayer-list-hide {
+        bottom: -88% !important;
+        visibility: hidden;
+        pointer-events: none;
+    }
+
+    /* Reuse the existing theme backdrop below its drawer (z-index 1002). */
+    body[data-type="music"] #menu-mask.site-music-drawer-open {
+        display: block !important;
+        z-index: 1001;
+    }
+}
+
+/* Without the optional latest-comments panel, the upstream percentage height
+   clips the console's tag links. Let its original cards size to real content. */
+#console .console-card-group-right,
+#console .console-card.tags {
+    height: auto;
+}
+
+#console .console-card.tags .card-tag-cloud {
+    overflow: auto;
+}
+
+/* Console controls share the same theme accent, including the active moon.
+   Utility selection fills stay visible on translucent black cards. */
+#console .button-group .console-btn-item.on > a,
+html[data-theme="dark"] #console .button-group .console-btn-item a.darkmode_switchbutton {
+    background: var(--anzhiyu-main);
+    color: var(--site-accent-foreground);
+}
+
+#console .button-group .console-btn-item:hover > a {
+    background: var(--anzhiyu-theme-op-deep) !important;
+    color: var(--site-accent-foreground);
+}
+
+/* Hover previously painted both states orange. The state color, action icon
+   and persistent caption must remain distinguishable while the pointer stays. */
+#console .button-group #consoleMusic {
+    position: relative;
+}
+
+#console .button-group #consoleMusic .music-switch,
+#console .button-group #consoleMusic:hover .music-switch {
+    background: var(--anzhiyu-card-bg) !important;
+    color: var(--anzhiyu-fontcolor);
+}
+
+#console .button-group #consoleMusic[data-state="playing"] .music-switch {
+    background: var(--anzhiyu-main) !important;
+    color: var(--site-accent-foreground);
+}
+
+#console .button-group #consoleMusic[data-state="loading"] .music-switch {
+    border: 2px dashed var(--anzhiyu-main);
+}
+
+#console .button-group #consoleMusic[data-state="error"] .music-switch {
+    border: 2px solid #e98089;
+}
+
+#console .button-group #consoleMusic:active {
+    transform: scale(0.94);
+}
+
+.site-console-music-status {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 2px 7px;
+    border-radius: 6px;
+    background: var(--anzhiyu-card-bg);
+    color: var(--anzhiyu-fontcolor);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+#recent-posts:has(> .blog-empty) > #categoryBar,
+#recent-posts:has(> .blog-empty) > #pagination {
+    display: none;
+}
+
+.blog-empty {
+    width: 100%;
+    padding: 48px 28px;
+    background: var(--anzhiyu-card-bg);
+    border: var(--style-border);
+    border-radius: 12px;
+}
+
+.blog-empty h2 {
+    margin: 0 0 12px;
+}
+
+.blog-empty a {
+    color: var(--anzhiyu-main);
+}
+
+.sticky_layout > .card-widget:has(> hr:only-child) {
+    display: none;
+}
+
+.sticky_layout
+> .card-widget:has(> .card-archives:empty):not(:has(> :not(.card-archives):not(hr))) {
+    display: none;
+}
+
+:focus-visible {
+    outline: 3px solid var(--anzhiyu-main);
+    outline-offset: 4px;
+}
+
+/* Keep the official hover menu usable when tabbing through its links. */
+#nav .menus_item:focus-within > .menus_item_child {
+    border: var(--style-border-hover);
+    box-shadow: var(--anzhiyu-shadow-main);
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0) scale(1);
+}
+
+/* The upstream hover bridge must not cover the clickable parent link. */
+#nav .menus_item > .menus_item_child::after {
+    pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation: none !important;
+        transition: none !important;
+        scroll-behavior: auto !important;
+    }
+}

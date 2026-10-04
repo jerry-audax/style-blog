@@ -1,0 +1,7 @@
+.build/app/
+.build/blog/
+db.json
+.content-sync.json
+source/_posts/database-article-*.md
+.artifacts/
+.test-site-*/
