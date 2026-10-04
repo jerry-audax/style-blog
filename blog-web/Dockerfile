@@ -14,6 +14,8 @@ FROM builder
 RUN apk add --no-cache nginx gettext \
     && rm -f /etc/nginx/http.d/default.conf /etc/nginx/conf.d/default.conf \
     && mkdir -p /var/lib/blog-publication /run/nginx \
+    && rm -rf /usr/share/nginx/html \
+    && cp -R /app/dist /usr/share/nginx/html \
     && chown -R node:node /var/lib/blog-publication
 
 ENV BACKEND_URL=http://blog-server:8080
