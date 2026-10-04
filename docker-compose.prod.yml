@@ -41,6 +41,7 @@ services:
       REDIS_PORT: 6380
       REDIS_DATABASE: ${REDIS_DATABASE:-0}
       JWT_SECRET: ${JWT_SECRET:?Set a strong random JWT_SECRET}
+      SURPRISE_STATE_DIRECTORY: ${SURPRISE_STATE_DIRECTORY:-/var/lib/blog-music}
     volumes:
       - ${MUSIC_STATE_HOST_DIRECTORY:-./data/music-docker}:/var/lib/blog-music
 

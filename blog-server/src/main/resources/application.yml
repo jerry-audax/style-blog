@@ -17,7 +17,7 @@ music:
   playlist-id: ${MUSIC_PLAYLIST_ID:939817038}
 
 surprise:
-  state-directory: ${SURPRISE_STATE_DIRECTORY:../data/music}
+  state-directory: ${SURPRISE_STATE_DIRECTORY:${MUSIC_STATE_DIRECTORY:../data/music}}
 
 spring:
   profiles:
