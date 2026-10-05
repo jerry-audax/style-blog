@@ -5,6 +5,7 @@ param(
     [int]$PostgresPort = 5432,
     [string]$RedisHost = '127.0.0.1',
     [int]$RedisPort = 6379,
+    [string]$LocalEnvironmentFile = (Join-Path $PSScriptRoot '../local.env'),
     [string]$ImgBedEnvironmentFile = (Join-Path $PSScriptRoot '../.env.imgbed.local'),
     [string]$MusicAudioProbeFile = '',
     [switch]$MusicAudioProbeReconcile
@@ -19,6 +20,29 @@ function Import-LocalImgBedEnvironment {
                 [Environment]::SetEnvironmentVariable($parts[0], $parts[1], 'Process')
             }
         }
+    }
+}
+
+function Import-LocalEnvironment {
+    $allowed = @(
+        'DB_URL', 'DB_USERNAME', 'DB_PASSWORD', 'DB_HOST', 'DB_PORT',
+        'JWT_SECRET', 'SA_TOKEN_JWT_SECRET_KEY', 'PUBLICATION_API_TOKEN',
+        'PUBLICATION_BASE_URL', 'PUBLICATION_TOKEN_FILE',
+        'IMGBED_BASE_URL', 'IMGBED_API_TOKEN', 'IMGBED_UPLOAD_CHANNEL',
+        'IMGBED_CHANNEL_NAME', 'IMGBED_ROOT_FOLDER', 'MUSIC_PLAYLIST_ID',
+        'DASHSCOPE_API_KEY'
+    )
+    if (-not (Test-Path -LiteralPath $LocalEnvironmentFile)) { return }
+    foreach ($line in Get-Content -LiteralPath $LocalEnvironmentFile) {
+        $trimmed = $line.Trim()
+        if (-not $trimmed -or $trimmed.StartsWith('#')) { continue }
+        $parts = $trimmed.Split('=', 2)
+        if ($parts.Length -ne 2 -or $parts[0].Trim() -notin $allowed) { continue }
+        $value = $parts[1].Trim()
+        if ($value.Length -ge 2 -and (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'")))) {
+            $value = $value.Substring(1, $value.Length - 2)
+        }
+        [Environment]::SetEnvironmentVariable($parts[0].Trim(), $value, 'Process')
     }
 }
 
@@ -54,15 +78,16 @@ if (-not $localPgSettings['POSTGRES_PASSWORD']) {
     throw 'Container has no POSTGRES_PASSWORD; supply backend connection variables manually.'
 }
 $previousDbVariables = @{}
-foreach ($name in @('DB_URL', 'DB_USERNAME', 'DB_PASSWORD', 'IMGBED_BASE_URL', 'IMGBED_API_TOKEN', 'IMGBED_UPLOAD_CHANNEL', 'IMGBED_CHANNEL_NAME', 'IMGBED_ROOT_FOLDER')) {
+foreach ($name in @('DB_URL', 'DB_USERNAME', 'DB_PASSWORD', 'DB_HOST', 'DB_PORT', 'JWT_SECRET', 'SA_TOKEN_JWT_SECRET_KEY', 'PUBLICATION_API_TOKEN', 'PUBLICATION_BASE_URL', 'PUBLICATION_TOKEN_FILE', 'IMGBED_BASE_URL', 'IMGBED_API_TOKEN', 'IMGBED_UPLOAD_CHANNEL', 'IMGBED_CHANNEL_NAME', 'IMGBED_ROOT_FOLDER', 'MUSIC_PLAYLIST_ID', 'DASHSCOPE_API_KEY')) {
     $previousDbVariables[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
 }
 try {
+    Import-LocalEnvironment
     Import-LocalImgBedEnvironment
     # Read credentials in-process only. Never print or persist the password.
-    $env:DB_URL = "jdbc:postgresql://${PostgresHost}:${PostgresPort}/${Database}"
-    $env:DB_USERNAME = if ($localPgSettings['POSTGRES_USER']) { $localPgSettings['POSTGRES_USER'] } else { 'postgres' }
-    $env:DB_PASSWORD = $localPgSettings['POSTGRES_PASSWORD']
+    if (-not $env:DB_URL) { $env:DB_URL = "jdbc:postgresql://${PostgresHost}:${PostgresPort}/${Database}" }
+    if (-not $env:DB_USERNAME) { $env:DB_USERNAME = if ($localPgSettings['POSTGRES_USER']) { $localPgSettings['POSTGRES_USER'] } else { 'postgres' } }
+    if (-not $env:DB_PASSWORD) { $env:DB_PASSWORD = $localPgSettings['POSTGRES_PASSWORD'] }
     Push-Location (Join-Path $PSScriptRoot '../blog-server')
     try {
         # The verification launcher intentionally overrides AI_ENABLED, even if the shell had enabled it.

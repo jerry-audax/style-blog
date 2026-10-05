@@ -26,3 +26,6 @@ AGENTS.md
 CLAUDE.md
 .codex/
 !deploy/.env.example
+
+!local.env.example
+
