@@ -16,7 +16,7 @@ blog-system/
 ├── docs/            当前基线、实施记录、待办及必要历史资料
 ├── pom.xml          后端多模块聚合构建
 ├── Jenkinsfile      测试、打包、Docker 镜像构建与推送
-└── docker-compose.yml
+├── docker-compose.prod.yml`r`n└── docker-compose.host-gateway.yml
 ```
 
 技术栈：Java 17、Spring Boot 3.3.2、MyBatis-Plus 3.5.7、Sa-Token 1.38.0、PostgreSQL、Redis；公开端 Hexo 8.1.2 / hexo-theme-anzhiyu 1.7.0 / Vue 3 / Vite 7，管理端 Vue 3 / Element Plus / Tiptap。公开端要求 Node.js >=22.12。
@@ -127,7 +127,7 @@ npm run build
 
 ## 部署与 CI
 
-Jenkins 当前执行数据库迁移工具测试、两项后端模块测试/打包、音乐运行时契约测试、两个前端测试/构建，再构建五个 Docker 镜像：`blog-server / blog-ai / blog-web / blog-admin / blog-publisher`。是否推送由 `PUSH_IMAGES` 控制，默认分支额外推送 `latest`。
+Jenkins 当前执行数据库迁移工具测试、后端测试/打包、音乐运行时契约测试、两个前端测试/构建，再构建三个生产 Docker 镜像：`blog-system-server / blog-system-web / blog-system-admin`。是否推送由 `PUSH_IMAGES` 控制，默认分支额外推送 `latest`。
 
 需配置 Registry 地址、命名空间及 Jenkins 凭据。若构建需要数据库最新文章，显式启用 `SYNC_BLOG_CONTENT` 并设置 `BLOG_PUBLIC_API_URL` 与 `BLOG_SITE_URL`；默认不自动同步，干净工作区可能没有导出的文章。
 
