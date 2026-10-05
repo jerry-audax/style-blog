@@ -1,13 +1,23 @@
 spring:
   datasource:
-    url: ${DB_URL:jdbc:postgresql://${DB_HOST:127.0.0.1}:5432/blog_system}
-    username: ${DB_USERNAME:postgres}
+    url: jdbc:postgresql://${DB_HOST:127.0.0.1}:5432/blog_system
+    username: ${DB_USERNAME:}
     password: ${DB_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
   data:
     redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-      database: ${REDIS_DATABASE:1}
+      host: ${REDIS_HOST:}
+      port: ${REDIS_PORT:}
+      database: ${REDIS_DATABASE:}
+  sql:
+    init:
+      mode: never # Import snapshots explicitly; never run the historical MySQL schema.
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 200MB
+      max-request-size: 205MB
+      file-size-threshold: 11MB
   ai:
     dashscope:
       api-key: ${DASHSCOPE_API_KEY:}
@@ -15,11 +25,56 @@ spring:
         options:
           model: qwen-max
 
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+imgbed:
+  base-url: ${IMGBED_BASE_URL:}
+  api-token: ${IMGBED_API_TOKEN:}
+  upload-channel: ${IMGBED_UPLOAD_CHANNEL:}
+  channel-name: ${IMGBED_CHANNEL_NAME:}
+  root-folder: ${IMGBED_ROOT_FOLDER:blog}
+
+ai:
+  enabled: ${AI_ENABLED:false}
+  knowledge:
+    initialize-on-startup: ${AI_INITIALIZE_ON_STARTUP:false}
+  client:
+    mode: ${AI_CLIENT_MODE:in-process}
+    base-url: ${AI_CLIENT_BASE_URL:http://localhost:8090}
+
+blog:
+  owner:
+    phone: ${BLOG_OWNER_PHONE:19140838906}
+
 publication:
   base-url: ${PUBLICATION_BASE_URL:http://127.0.0.1:5176}
   api-token: ${PUBLICATION_API_TOKEN:}
   token-file: ${PUBLICATION_TOKEN_FILE:../blog-web/.runtime/publication.key}
 
-sa-token:
-  jwt-secret-key: ${SA_TOKEN_JWT_SECRET_KEY:${JWT_SECRET:}}
+surprise:
+  state-directory: ${SURPRISE_STATE_DIRECTORY:../data/music}
 
+music:
+  node: ${MUSIC_NODE:node}
+  runtime-directory: ${MUSIC_RUNTIME_DIRECTORY:music-runtime}
+  state-directory: ${MUSIC_STATE_DIRECTORY:../data/music}
+  playlist-id: ${MUSIC_PLAYLIST_ID:939817038}
+
+
+sa-token:
+  token-name: Authorization
+  is-read-cookie: false
+  is-read-body: false
+  timeout: 86400
+  active-timeout: -1
+  is-concurrent: true
+  is-share: false
+  is-log: false
+  jwt-secret-key: ${JWT_SECRET:}
