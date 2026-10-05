@@ -11,13 +11,14 @@ pipeline {
     }
 
     parameters {
-        string(name: 'DOCKER_REGISTRY', defaultValue: 'docker.io', description: 'Registry hostname, for example docker.io or registry.example.com')
-        string(name: 'DOCKER_NAMESPACE', defaultValue: 'replace-me', description: 'Lower-case registry namespace or organization')
-        string(name: 'DOCKER_CREDENTIALS_ID', defaultValue: 'dockerhub-blog-system', description: 'Jenkins username/password credential ID used for docker login')
-        booleanParam(name: 'PUSH_IMAGES', defaultValue: true, description: 'Push the application images after tests and image builds pass')
-        booleanParam(name: 'SYNC_BLOG_CONTENT', defaultValue: false, description: 'Export public published articles before building Hexo; requires an accessible public read API')
-        string(name: 'BLOG_PUBLIC_API_URL', defaultValue: '', description: 'Public Spring Boot origin used by content export; no admin credentials')
-        string(name: 'BLOG_SITE_URL', defaultValue: '', description: 'Public website origin used by Hexo canonical/search URLs, for example https://blog.example.com')
+        string(name: 'DOCKER_REGISTRY', defaultValue: 'docker.io', description: '镜像仓库地址，例如 docker.io')
+        string(name: 'DOCKER_NAMESPACE', defaultValue: 'replace-me', description: '镜像仓库命名空间，只允许小写字符')
+        string(name: 'DOCKER_CREDENTIALS_ID', defaultValue: 'dockerhub-blog-system', description: 'Jenkins Docker 用户名密码凭据 ID')
+        booleanParam(name: 'PUSH_IMAGES', defaultValue: true, description: '测试和构建通过后推送镜像')
+        booleanParam(name: 'SYNC_BLOG_CONTENT', defaultValue: false, description: '构建 Hexo 前从公开 API 同步文章')
+        string(name: 'BLOG_PUBLIC_API_URL', defaultValue: '', description: '文章公开 API 地址，仅在同步文章时使用')
+        string(name: 'BLOG_SITE_URL', defaultValue: '', description: '线上站点地址，例如 https://blog.example.com')
+        string(name: 'BLOG_OWNER_PHONE', defaultValue: '', description: '管理端构建所需的博主手机号，不要填写密码')
     }
 
     environment {
@@ -39,14 +40,14 @@ pipeline {
                     java -version
                     mvn -version
                     node --version
-                    node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major < 22 || (major === 22 && minor < 12)) throw new Error("Public web build requires Node.js >= 22.12")'
+                    node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major < 22 || (major === 22 && minor < 12)) throw new Error("blog-web requires Node.js >= 22.12")'
                     npm --version
                     docker version --format '{{.Server.Version}}'
                 '''
             }
         }
 
-        stage('Database migration tool tests') {
+        stage('Database migration tests') {
             steps {
                 sh 'node --test tools/database/*.test.mjs'
             }
@@ -69,25 +70,22 @@ pipeline {
             }
         }
 
-        stage('AI service test and package') {
-            steps {
-                dir('blog-ai') {
-                    sh 'mvn -B -ntp clean test package'
-                }
-            }
-        }
-
         stage('Frontend test and build') {
             parallel {
-                stage('Public web') {
+                stage('Public Vue and Hexo') {
                     steps {
                         dir('blog-web') {
                             sh 'npm ci --no-audit --no-fund'
                             sh 'npm test'
                             script {
-                                withEnv(["BLOG_API_URL=${params.BLOG_PUBLIC_API_URL.trim()}", "BLOG_SITE_URL=${params.BLOG_SITE_URL.trim()}"]) {
+                                if (params.SYNC_BLOG_CONTENT && !params.BLOG_PUBLIC_API_URL.trim()) {
+                                    error('BLOG_PUBLIC_API_URL is required when SYNC_BLOG_CONTENT is enabled')
+                                }
+                                withEnv([
+                                    "BLOG_API_URL=${params.BLOG_PUBLIC_API_URL.trim()}",
+                                    "BLOG_SITE_URL=${params.BLOG_SITE_URL.trim()}"
+                                ]) {
                                     if (params.SYNC_BLOG_CONTENT) {
-                                        if (!params.BLOG_PUBLIC_API_URL.trim()) error('BLOG_PUBLIC_API_URL is required when SYNC_BLOG_CONTENT is enabled')
                                         sh 'npm run content:sync'
                                     }
                                     sh 'npm run build'
@@ -96,12 +94,15 @@ pipeline {
                         }
                     }
                 }
-                stage('Admin web') {
+                stage('Admin Vue') {
                     steps {
                         dir('blog-admin') {
                             sh 'npm ci --legacy-peer-deps --no-audit --no-fund'
                             sh 'npm test'
-                            withEnv(["VITE_BLOG_SITE_URL=${params.BLOG_SITE_URL.trim()}"]) {
+                            withEnv([
+                                "VITE_BLOG_OWNER_PHONE=${params.BLOG_OWNER_PHONE.trim()}",
+                                "VITE_BLOG_SITE_URL=${params.BLOG_SITE_URL.trim()}"
+                            ]) {
                                 sh 'npm run build'
                             }
                         }
@@ -114,24 +115,19 @@ pipeline {
             steps {
                 script {
                     def revision = sh(returnStdout: true, script: 'git rev-parse --short=12 HEAD').trim()
-                    def safeRegistry = params.DOCKER_REGISTRY.trim().replaceAll('/+$', '')
-                    def safeNamespace = params.DOCKER_NAMESPACE.trim().replaceAll('^/+', '').replaceAll('/+$', '')
-
-                    if (!safeRegistry || !safeNamespace) {
+                    def registry = params.DOCKER_REGISTRY.trim().replaceAll('/+$', '')
+                    def namespace = params.DOCKER_NAMESPACE.trim().replaceAll('^/+', '').replaceAll('/+$', '')
+                    if (!registry || !namespace) {
                         error('DOCKER_REGISTRY and DOCKER_NAMESPACE must not be empty')
                     }
-                    if (!(safeNamespace ==~ /[a-z0-9._\/-]+/)) {
+                    if (!(namespace ==~ /[a-z0-9._\/-]+/)) {
                         error('DOCKER_NAMESPACE must contain only lower-case letters, digits, dot, underscore, slash, or hyphen')
                     }
-
                     env.IMAGE_TAG = "${env.BUILD_NUMBER}-${revision}"
-                    env.IMAGE_BACKEND = "${safeRegistry}/${safeNamespace}/blog-system-blog-server"
-                    env.IMAGE_AI = "${safeRegistry}/${safeNamespace}/blog-system-blog-ai"
-                    env.IMAGE_WEB = "${safeRegistry}/${safeNamespace}/blog-system-blog-web"
-                    env.IMAGE_ADMIN = "${safeRegistry}/${safeNamespace}/blog-system-blog-admin"
-                    env.IMAGE_PUBLISHER = "${safeRegistry}/${safeNamespace}/blog-system-blog-publisher"
+                    env.IMAGE_BACKEND = "${registry}/${namespace}/blog-system-server"
+                    env.IMAGE_WEB = "${registry}/${namespace}/blog-system-web"
+                    env.IMAGE_ADMIN = "${registry}/${namespace}/blog-system-admin"
                     env.PUSH_LATEST = ((env.BRANCH_NAME ?: env.GIT_BRANCH ?: '').replaceFirst(/^origin\//, '') in ['main', 'master']).toString()
-
                     echo "Building images with tag ${env.IMAGE_TAG}; latest=${env.PUSH_LATEST}"
                 }
             }
@@ -144,29 +140,20 @@ pipeline {
                         sh 'docker build --pull -t "$IMAGE_BACKEND:$IMAGE_TAG" blog-server'
                     }
                 }
-                stage('AI image') {
-                    steps {
-                        sh 'docker build --pull -t "$IMAGE_AI:$IMAGE_TAG" blog-ai'
-                    }
-                }
-                stage('Public web image') {
+                stage('Public Vue and Hexo image') {
                     steps {
                         withEnv(["BLOG_SITE_URL=${params.BLOG_SITE_URL.trim()}"]) {
                             sh 'docker build --pull --build-arg BLOG_SITE_URL="$BLOG_SITE_URL" -t "$IMAGE_WEB:$IMAGE_TAG" blog-web'
                         }
                     }
                 }
-                stage('Admin web image') {
+                stage('Admin Vue image') {
                     steps {
-                        withEnv(["VITE_BLOG_SITE_URL=${params.BLOG_SITE_URL.trim()}"]) {
-                            sh 'docker build --pull --build-arg VITE_BLOG_SITE_URL="$VITE_BLOG_SITE_URL" -t "$IMAGE_ADMIN:$IMAGE_TAG" blog-admin'
-                        }
-                    }
-                }
-                stage('Publication worker image') {
-                    steps {
-                        withEnv(["BLOG_SITE_URL=${params.BLOG_SITE_URL.trim()}"]) {
-                            sh 'docker build --pull --target publisher --build-arg BLOG_SITE_URL="$BLOG_SITE_URL" -t "$IMAGE_PUBLISHER:$IMAGE_TAG" blog-web'
+                        withEnv([
+                            "VITE_BLOG_OWNER_PHONE=${params.BLOG_OWNER_PHONE.trim()}",
+                            "VITE_BLOG_SITE_URL=${params.BLOG_SITE_URL.trim()}"
+                        ]) {
+                            sh 'docker build --pull --build-arg VITE_BLOG_OWNER_PHONE="$VITE_BLOG_OWNER_PHONE" --build-arg VITE_BLOG_SITE_URL="$VITE_BLOG_SITE_URL" -t "$IMAGE_ADMIN:$IMAGE_TAG" blog-admin'
                         }
                     }
                 }
@@ -188,26 +175,17 @@ pipeline {
                         set +x
                         printf '%s' "$DOCKER_PASSWORD" | docker login "$DOCKER_REGISTRY" --username "$DOCKER_USERNAME" --password-stdin
                         set -x
-
                         docker push "$IMAGE_BACKEND:$IMAGE_TAG"
-                        docker push "$IMAGE_AI:$IMAGE_TAG"
                         docker push "$IMAGE_WEB:$IMAGE_TAG"
                         docker push "$IMAGE_ADMIN:$IMAGE_TAG"
-                        docker push "$IMAGE_PUBLISHER:$IMAGE_TAG"
-
                         if [ "$PUSH_LATEST" = "true" ]; then
                             docker tag "$IMAGE_BACKEND:$IMAGE_TAG" "$IMAGE_BACKEND:latest"
-                            docker tag "$IMAGE_AI:$IMAGE_TAG" "$IMAGE_AI:latest"
                             docker tag "$IMAGE_WEB:$IMAGE_TAG" "$IMAGE_WEB:latest"
                             docker tag "$IMAGE_ADMIN:$IMAGE_TAG" "$IMAGE_ADMIN:latest"
-                            docker tag "$IMAGE_PUBLISHER:$IMAGE_TAG" "$IMAGE_PUBLISHER:latest"
                             docker push "$IMAGE_BACKEND:latest"
-                            docker push "$IMAGE_AI:latest"
                             docker push "$IMAGE_WEB:latest"
                             docker push "$IMAGE_ADMIN:latest"
-                            docker push "$IMAGE_PUBLISHER:latest"
                         fi
-
                         docker logout "$DOCKER_REGISTRY" >/dev/null 2>&1 || true
                     '''
                 }
@@ -216,7 +194,7 @@ pipeline {
 
         stage('Archive artifacts') {
             steps {
-            archiveArtifacts artifacts: 'blog-server/target/*.jar,blog-ai/target/*.jar,blog-web/dist/**,blog-admin/dist/**', fingerprint: true
+                archiveArtifacts artifacts: 'blog-server/target/*.jar,blog-web/dist/**,blog-admin/dist/**', fingerprint: true
             }
         }
     }

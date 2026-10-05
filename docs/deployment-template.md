@@ -129,3 +129,9 @@ environment:
 4. 音乐和惊喜依赖状态目录；只部署镜像而不挂载状态文件会导致页面能打开、接口返回 503。
 5. 图床令牌为空时音乐接口会主动返回 503；上线前检查容器内变量是否已设置，但不要输出变量值。
 6. 部署问题按“页面 → API → 容器日志 → 环境变量 → 持久化目录 → 外部服务”顺序定位。
+
+## 9. Jenkins 自动化
+
+仓库根目录的 `Jenkinsfile` 与当前三镜像架构一致：先执行数据库脚本测试、后端测试打包、音乐运行时测试和两个前端测试构建，再构建并可选推送 `blog-system-server`、`blog-system-web`、`blog-system-admin` 三个镜像。Jenkins 只保存 Docker 仓库凭据，数据库密码、JWT、图床令牌和线上发布令牌不进入流水线参数或构建日志。
+
+常用参数是 `PUSH_IMAGES`、`DOCKER_NAMESPACE`、`BLOG_SITE_URL`；只有需要同步公开文章时才启用 `SYNC_BLOG_CONTENT` 并填写 `BLOG_PUBLIC_API_URL`。
