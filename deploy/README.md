@@ -1,5 +1,7 @@
 # Production deployment
 
+The reusable deployment template for the current Vue + Hexo + Spring Boot layout is in [`docs/deployment-template.md`](../docs/deployment-template.md). It covers host Nginx, both frontend images, the backend JAR image, persistent media state, secret handling, verification, and rollback.
+
 The production stack builds three application images: the Spring Boot API, the public Vue site, and the admin Vue site. The public image also runs the internal publication worker beside Nginx. Redis is an internal runtime service, and PostgreSQL is intentionally external and is never initialized by Compose.
 
 ## First deployment
@@ -41,4 +43,5 @@ The override defaults to host ports `8080` (API), `8081` (publication worker ins
 ## Upgrade and rollback
 
 Build a new image tag, start it with the same `deploy/.env`, and check `docker compose ... ps` plus the public site before removing old images. Do not run a database migration automatically during an application upgrade. Back up PostgreSQL and the `blog-publication` volume before a rollback.
+
 
