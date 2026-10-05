@@ -13,7 +13,8 @@ RUN npm run build
 FROM nginx:1.27-alpine
 
 ENV BACKEND_URL=http://blog-server:8080
-ENV NGINX_ENVSUBST_VARS='$BACKEND_URL'
+ENV NGINX_LISTEN_PORT=80
+ENV NGINX_ENVSUBST_VARS='$BACKEND_URL $NGINX_LISTEN_PORT'
 RUN rm -f /etc/nginx/conf.d/default.conf
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=builder /app/dist /usr/share/nginx/html

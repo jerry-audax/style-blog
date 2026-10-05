@@ -66,10 +66,12 @@ mvn -B -ntp clean test
 本机已有环境的启动入口：
 
 ```powershell
+# 首次使用：复制 local.env.example 为 local.env，并填写本地敏感配置
+# local.env 已被 Git 忽略，不会提交
 ./tools/start-local-backend.ps1
 ```
 
-该脚本加载已确认的本地配置，并强制关闭 AI。其他环境先配置数据库、Redis、JWT 等，再启动：
+该脚本加载根目录 `local.env` 和兼容的 `.env.imgbed.local`，并强制关闭 AI。数据库密码、JWT、图床 Token、发布 Token 等不再写入 `application-dev.yml`。其他环境先配置数据库、Redis、JWT 等，再启动：
 
 ```powershell
 cd blog-server

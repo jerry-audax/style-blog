@@ -25,7 +25,7 @@ services:
       AI_ENABLED: ${AI_ENABLED:-false}
       AI_INITIALIZE_ON_STARTUP: ${AI_INITIALIZE_ON_STARTUP:-false}
       BLOG_OWNER_PHONE: ${BLOG_OWNER_PHONE:?Set BLOG_OWNER_PHONE}
-      PUBLICATION_BASE_URL: http://blog-publisher:8081
+      PUBLICATION_BASE_URL: http://blog-web:8081
       PUBLICATION_API_TOKEN: ${PUBLICATION_API_TOKEN:?Set a random token of at least 32 characters}
       MUSIC_PLAYLIST_ID: ${MUSIC_PLAYLIST_ID:-939817038}
       MUSIC_STATE_DIRECTORY: /var/lib/blog-music
@@ -41,29 +41,9 @@ services:
       REDIS_PORT: 6380
       REDIS_DATABASE: ${REDIS_DATABASE:-0}
       JWT_SECRET: ${JWT_SECRET:?Set a strong random JWT_SECRET}
+      SURPRISE_STATE_DIRECTORY: ${SURPRISE_STATE_DIRECTORY:-/var/lib/blog-music}
     volumes:
       - ${MUSIC_STATE_HOST_DIRECTORY:-./data/music-docker}:/var/lib/blog-music
-
-  blog-publisher:
-    build:
-      context: ./blog-web
-      target: publisher
-      args:
-        BLOG_SITE_URL: ${BLOG_SITE_URL:?Set BLOG_SITE_URL}
-    image: ${BLOG_PUBLISHER_IMAGE:-blog-system-publisher:latest}
-    restart: unless-stopped
-    depends_on:
-      - blog-server
-    expose:
-      - "8081"
-    environment:
-      BLOG_API_URL: http://blog-server:8080
-      BLOG_SITE_URL: ${BLOG_SITE_URL:?Set BLOG_SITE_URL}
-      PUBLICATION_API_TOKEN: ${PUBLICATION_API_TOKEN:?Set a random token of at least 32 characters}
-      PUBLICATION_STATE_DIRECTORY: /var/lib/blog-publication
-      PUBLICATION_PORT: 8081
-    volumes:
-      - blog-publication:/var/lib/blog-publication
 
   blog-web:
     build:
@@ -73,14 +53,20 @@ services:
     image: ${BLOG_WEB_IMAGE:-blog-system-web:latest}
     restart: unless-stopped
     depends_on:
-      - blog-publisher
       - blog-server
     environment:
+      BLOG_API_URL: http://blog-server:8080
+      BLOG_SITE_URL: ${BLOG_SITE_URL:?Set BLOG_SITE_URL}
+      PUBLICATION_API_TOKEN: ${PUBLICATION_API_TOKEN:?Set a random token of at least 32 characters}
+      PUBLICATION_STATE_DIRECTORY: /var/lib/blog-publication
+      PUBLICATION_PORT: 8081
       BACKEND_URL: http://blog-server:8080
-      PUBLICATION_URL: http://blog-publisher:8081
-      NGINX_ENVSUBST_VARS: '$$BACKEND_URL $$PUBLICATION_URL'
+      PUBLICATION_URL: http://127.0.0.1:8081
+      NGINX_ENVSUBST_VARS: '$$BACKEND_URL $$PUBLICATION_URL $$NGINX_LISTEN_PORT'
     ports:
       - "${BLOG_HTTP_PORT:-80}:80"
+    expose:
+      - "8081"
 
   blog-admin:
     build:
