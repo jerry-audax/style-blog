@@ -74,6 +74,11 @@ comments: { use: [ ], count: false, card_post_count: false }
 local_search: { enable: true, preload: false }
 darkmode: { enable: true, button: true, autoChangeMode: false }
 display_mode: dark
+# Homepage article cards: prefer the database-written summary (synced into the
+# description front-matter); fall back to auto-excerpt when absent.
+index_post_content:
+  method: 2
+  length: 500
 # Keep the installed theme's defaults for other options; own the site palette here.
 theme_color:
   enable: true

@@ -267,6 +267,14 @@ html[data-theme="dark"] #an_music_bg {
     }
 }
 
+/* Upstream anzhiyu hides the homepage article excerpt (opacity: 0; height: 0).
+   The summary written in the database is synced into the description
+   front-matter, so force the excerpt visible on all screen sizes. */
+#content-inner #recent-posts > .recent-post-item > .recent-post-info > .content {
+    opacity: 1 !important;
+    height: auto !important;
+}
+
 /* The category strip in the screenshot is part of the theme's #category-bar,
    not #categoryBar. Give it the same quiet glass treatment as article rows. */
 html[data-theme="dark"] #category-bar.category-bar {
