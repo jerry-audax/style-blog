@@ -2,6 +2,8 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const {sanitizeContent, articleId} = require('../tools/content.cjs')
+const {summaryOnlyPostView, removeEmptyCardSummaries} = require('./article-summary.cjs')
+const {prepareMediaLoading} = require('./media-loading.cjs')
 
 // The single Meting/media owner stays outside PJAX's replacement region.
 // Re-target only the upstream music-page selectors to the UI mount. Keep all
@@ -105,6 +107,8 @@ function widgetAssets() {
 }
 
 hexo.extend.filter.register('after_render:html', (html) => {
+    html = html.replace('<div class="categoryGroup">', '<div class="categoryGroup" data-blog-home-tags>')
+    html = html.replace('<div class="tag-cloud-list is-center">', '<div class="tag-cloud-list is-center" data-blog-tag-articles>')
     // Icon-font glyphs are decorative; the visible text supplies link names.
     html = html.replaceAll('<i class="anzhiyufont ', '<i aria-hidden="true" class="anzhiyufont ')
     // Preserve the official nested menu component; its parent is also a working
@@ -165,7 +169,7 @@ hexo.extend.filter.register('after_render:html', (html) => {
             '$1<div class="blog-empty"><h2>暂无文章</h2><p>这里记录技术学习、系统设计与开发实践。文章发布后会显示在这里。</p></div>',
         )
     }
-    return html
+    return prepareMediaLoading(removeEmptyCardSummaries(html))
 })
 
 // The upstream recommendation helper fills from collection insertion order.
@@ -177,6 +181,7 @@ hexo.extend.filter.register('before_generate', () => {
         const pinned = posts.filter(post => Number(post[attribute]) > 0)
             .sort((a, b) => Number(b[attribute]) - Number(a[attribute]))
         const limit = hexo.theme.config.home_top.swiper.enable ? 4 : 6
-        return [...pinned, ...posts.filter(post => !pinned.includes(post))].slice(0, limit)
+        const selected = [...pinned, ...posts.filter(post => !pinned.includes(post))].slice(0, limit)
+        return type === 'swiper_list' ? selected.map(summaryOnlyPostView) : selected
     })
 })

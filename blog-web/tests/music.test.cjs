@@ -6,6 +6,7 @@ const vm = require('node:vm')
 const {JSDOM} = require('jsdom')
 
 const source = fs.readFileSync(path.join(__dirname, '../source/js/site-music.js'), 'utf8')
+const surpriseSource = fs.readFileSync(path.join(__dirname, '../source/js/site-surprise.js'), 'utf8')
 
 function fixture(fetcher, {
     realPlayer = false,
@@ -20,6 +21,11 @@ function fixture(fetcher, {
     <script id="site-music-config" type="application/json">{"id":"939817038","server":"netease","volume":0.5,"source":"imgbed"}</script>`,
         {runScripts: 'outside-only', url: 'http://localhost/blog/music/'})
     const win = dom.window
+    const lyricTransportRequests = []
+    win.XMLHttpRequest = class {
+        open(method,url) {lyricTransportRequests.push({method,url})}
+        send() {}
+    }
     win.Math.random = random
     win.document.body.dataset.type = home ? 'index' : 'music'
     if (home) win.document.getElementById('anMusic-page').remove()
@@ -195,6 +201,7 @@ function fixture(fetcher, {
         advance,
         notifications,
         listeners,
+        lyricTransportRequests,
         legacyMenuCalls: () => legacyMenuCalls
     }
 }
@@ -203,6 +210,80 @@ const playlist = (length = 8) => Array.from({length}, (_, index) => ({
     title: `歌曲 ${index + 1}`, author: '歌手', url: `https://example.test/file/blog/music/${index}.mp3`,
 }))
 const hostedBody = songs => ({code: 0, data: {source: 'imgbed', songs}})
+
+test('home initializes real APlayer without requesting hidden lyrics or whole-playlist audio', async () => {
+    const songs=playlist(3).map((song,index)=>({...song,cover:`https://images.test/${index}.jpg`,lyrics:`https://example.test/file/blog/music/${index}.lrc`}))
+    const calls=[]
+    const f=fixture(async url=>{calls.push(url);return {ok:true,json:async()=>hostedBody(songs)}}, {realPlayer:true,home:true,random:()=>0.7})
+    try {
+        await f.players[0].ready
+        assert.equal(f.lyricTransportRequests.length,0,'hidden home player must not start vendor lyric XHRs')
+        assert.deepEqual(calls,['/api/music/hosted-playlist'])
+        const player=f.players[0].aplayer
+        assert.equal(player.audio.preload,'none')
+        assert.equal(player.audio.src,songs[2].url)
+        assert.equal(f.win.document.querySelectorAll('meting-js').length,1)
+        player.destroy()
+    } finally {f.dom.window.close()}
+})
+
+test('music page lazily loads only current lyrics, escapes markup, caches them and ignores stale results', async () => {
+    const songs=playlist(3).map((song,index)=>({...song,lyrics:`https://example.test/file/blog/music/${index}.lrc`}))
+    const calls=[], pending=new Map()
+    const f=fixture(async (url,options)=>{
+        calls.push(url)
+        if(url==='/api/music/hosted-playlist')return {ok:true,json:async()=>hostedBody(songs)}
+        return new Promise(resolve=>pending.set(url,{resolve,signal:options.signal}))
+    },{realPlayer:true,home:true,random:()=>0})
+    const flush=()=>new Promise(resolve=>setImmediate(resolve))
+    try {
+        await f.players[0].ready
+        const player=f.players[0].aplayer
+        const body=f.win.document.getElementById('body-wrap')
+        body.innerHTML='<div id="anMusic-page"><div id="anMusic-page-meting"></div></div>'
+        f.win.document.dispatchEvent(new f.win.Event('pjax:complete'));await flush()
+        assert.deepEqual(calls,['/api/music/hosted-playlist',songs[0].lyrics])
+        const first=pending.get(songs[0].lyrics)
+        player.list.switch(1);await flush()
+        assert.ok(first.signal.aborted)
+        pending.get(songs[1].lyrics).resolve({ok:true,text:async()=> '[00:01.00]<img src=x onerror=alert(1)>第二首'})
+        await flush()
+        assert.equal(player.template.lrc.textContent.trim(),'<img src=x onerror=alert(1)>第二首')
+        assert.equal(player.template.lrc.querySelector('img'),null)
+        first.resolve({ok:true,text:async()=> '[00:01.00]STALE_FIRST'})
+        await flush()
+        assert.doesNotMatch(player.template.lrc.textContent,/STALE_FIRST/)
+        player.list.switch(2);await flush()
+        player.list.switch(1);await flush()
+        assert.equal(calls.filter(url=>url===songs[1].lyrics).length,1)
+        f.win.document.dispatchEvent(new f.win.Event('pjax:send'))
+        body.innerHTML='';f.win.document.dispatchEvent(new f.win.Event('pjax:complete'))
+        assert.equal(f.players[0].aplayer,player)
+        assert.equal(f.lyricTransportRequests.length,0)
+        player.destroy()
+    } finally {f.dom.window.close()}
+})
+
+test('untimed or empty lyric responses stay safe when revisiting a track and updating playback time', async () => {
+    for (const text of ['', 'not a timed LRC', '[ar:artist]\n[ti:title]']) {
+        const songs=playlist(2).map((song,index)=>({...song,lyrics:`https://example.test/file/blog/music/${index}.lrc`}))
+        const f=fixture(async url=>url==='/api/music/hosted-playlist'
+            ? {ok:true,json:async()=>hostedBody(songs)}
+            : {ok:true,text:async()=>url===songs[0].lyrics?text:'[00:00.00]有效歌词'}, {realPlayer:true,random:()=>0})
+        const flush=()=>new Promise(resolve=>setImmediate(resolve))
+        try {
+            await f.players[0].ready;await flush()
+            const player=f.players[0].aplayer
+            assert.ok(player.lrc.current.length>0,'empty lyric parser results must never reach the renderer or its cache')
+            player.list.switch(1);await flush()
+            player.list.switch(0);await flush()
+            assert.ok(player.lrc.current.length>0)
+            assert.doesNotThrow(()=>player.lrc.update(3))
+            assert.match(player.template.lrc.textContent,/歌词暂不可用/)
+            player.destroy()
+        } finally {f.dom.window.close()}
+    }
+})
 
 test('hosted audio populates one shared player without making any community request', async () => {
     const calls = []
@@ -304,6 +385,197 @@ async function playbackFixture(songs = playlist(), options) {
     result.fail = (player = result.player) => player.audio.dispatchEvent(new result.win.Event('error'))
     return result
 }
+
+const flushSurprise = () => new Promise(resolve => setImmediate(resolve))
+const surpriseResponse = title => ({ok: true, json: async () => ({code: 0,
+    data: {title, url: 'https://example.test/file/surprise.mp4'}})})
+const deferredSurprise = () => {
+    let resolve, reject
+    const promise = new Promise((yes, no) => { resolve = yes; reject = no })
+    return {promise, resolve, reject}
+}
+
+async function surpriseFixture(fetcher, {direct = false} = {}) {
+    const f = await playbackFixture(playlist(), {realPlayer: true, home: true})
+    const document = f.win.document
+    const link = document.createElement('a')
+    link.href = '/blog/surprise/'
+    document.body.append(link)
+    if (direct) {
+        const marker = document.createElement('div')
+        marker.dataset.surprisePage = ''
+        document.body.append(marker)
+    }
+    f.win.fetch = fetcher
+    f.player.play()
+    vm.runInContext(surpriseSource, f.dom.getInternalVMContext())
+    f.openSurprise = () => link.click()
+    f.surpriseOverlay = () => document.querySelector('.site-surprise-overlay')
+    f.chooseSurprise = (index = 0) => f.surpriseOverlay().querySelectorAll('[data-surprise-choice]')[index].click()
+    return f
+}
+
+test('surprise age choices pause the real persistent player before waiting and before video playback', async () => {
+    for (const choice of [0, 1]) {
+        const request = deferredSurprise()
+        const f = await surpriseFixture(() => request.promise)
+        try {
+            f.openSurprise()
+            assert.equal(f.player.paused, true)
+            f.player.play()
+            f.chooseSurprise(choice)
+            assert.equal(f.player.paused, true, 'choice must cancel music before awaiting the resource')
+            f.player.play()
+            request.resolve(surpriseResponse('<safe title>'))
+            await flushSurprise()
+            const overlay = f.surpriseOverlay()
+            const video = overlay.querySelector('video')
+            assert.equal(f.player.paused, true, 'music resumed while fetching must be paused before video starts')
+            assert.equal(video.paused, false)
+            assert.equal(video.muted, false)
+            assert.equal(video.volume, 1)
+            assert.equal(overlay.classList.contains('is-fullscreen'), true)
+            assert.equal(overlay.classList.contains('is-playing'), true)
+            assert.equal(overlay.querySelector('[role="alert"]').hidden, true, 'successful playback must not report a missing title element')
+        } finally { f.dom.window.close() }
+    }
+})
+
+test('surprise native video resume pauses music and ending does not restart it', async () => {
+    const f = await surpriseFixture(async () => surpriseResponse('Native playback'))
+    try {
+        f.openSurprise()
+        await flushSurprise()
+        f.chooseSurprise()
+        await flushSurprise()
+        const video = f.surpriseOverlay().querySelector('video')
+        video.pause()
+        f.player.play()
+        await video.play()
+        assert.equal(f.player.paused, true, 'native controls must use the same music pause entrypoint')
+        video.dispatchEvent(new f.win.Event('ended'))
+        assert.equal(f.player.paused, true)
+    } finally { f.dom.window.close() }
+})
+
+test('surprise direct PJAX entry works without music initialized and keeps successful playback error-free', async () => {
+    const f = await surpriseFixture(async () => surpriseResponse('Direct entry'), {direct: true})
+    try {
+        f.win.document.dispatchEvent(new f.win.Event('pjax:complete'))
+        assert.equal(f.player.paused, true)
+        delete f.win.siteMusicPause
+        f.chooseSurprise(1)
+        await flushSurprise()
+        assert.equal(f.surpriseOverlay().querySelector('video').paused, false)
+        assert.equal(f.surpriseOverlay().querySelector('[role="alert"]').hidden, true)
+    } finally { f.dom.window.close() }
+})
+
+test('surprise close, PJAX leave and pagehide stop and release the video without resuming music', async () => {
+    for (const reason of ['close', 'pjax:send', 'pagehide']) {
+        const f = await surpriseFixture(async () => surpriseResponse('Release video'))
+        try {
+            f.openSurprise()
+            await flushSurprise()
+            f.chooseSurprise()
+            await flushSurprise()
+            const video = f.surpriseOverlay().querySelector('video')
+            assert.equal(video.paused, false)
+            if (reason === 'close') f.surpriseOverlay().querySelector('.site-surprise-close').click()
+            else if (reason === 'pagehide') f.win.dispatchEvent(new f.win.Event(reason))
+            else f.win.document.dispatchEvent(new f.win.Event(reason))
+            assert.equal(video.paused, true, 'removing the DOM alone must not leave detached media playing')
+            assert.equal(video.hasAttribute('src'), false)
+            assert.equal(f.surpriseOverlay(), null)
+            assert.equal(f.player.paused, true)
+        } finally { f.dom.window.close() }
+    }
+})
+
+test('closed surprise requests cannot start detached media or clear the new experience cache', async () => {
+    for (const outcome of ['success', 'failure']) {
+        const requests = [deferredSurprise(), deferredSurprise()]
+        let calls = 0
+        const f = await surpriseFixture(() => requests[calls++].promise)
+        try {
+            f.openSurprise()
+            f.chooseSurprise()
+            const oldVideo = f.surpriseOverlay().querySelector('video')
+            f.surpriseOverlay().querySelector('.site-surprise-close').click()
+            f.openSurprise()
+            const current = f.surpriseOverlay()
+            if (outcome === 'success') requests[0].resolve(surpriseResponse('Stale video'))
+            else requests[0].reject(new Error('Stale failure'))
+            await flushSurprise()
+            assert.equal(oldVideo.paused, true, 'late response must never start detached video')
+            assert.equal(oldVideo.hasAttribute('src'), false)
+            assert.equal(current.classList.contains('is-playing'), false)
+            f.chooseSurprise()
+            assert.equal(calls, 2, 'old failure must not discard the new request and cause another fetch')
+            requests[1].resolve(surpriseResponse('Current video'))
+            await flushSurprise()
+            assert.equal(current.querySelector('video').paused, false)
+            assert.equal(current.querySelector('[role="alert"]').hidden, true)
+        } finally { f.dom.window.close() }
+    }
+})
+
+test('unplayable surprise media shows a CSS-visible error and allows a fresh resource retry', async () => {
+    let calls = 0
+    const f = await surpriseFixture(async () => { calls++; return surpriseResponse('Retry media') })
+    try {
+        const stylesheet = fs.readFileSync(path.join(__dirname, '../source/css/site.css'), 'utf8')
+        const start = stylesheet.indexOf('body.site-surprise-open')
+        const end = stylesheet.indexOf('\n#web_bg', start)
+        assert.ok(start >= 0 && end > start)
+        const style = f.win.document.createElement('style')
+        style.textContent = stylesheet.slice(start, end)
+        f.win.document.head.append(style)
+        f.openSurprise()
+        await flushSurprise()
+        const overlay = f.surpriseOverlay()
+        const video = overlay.querySelector('video')
+        video.play = () => Promise.reject(new f.win.DOMException('Unsupported sample', 'NotSupportedError'))
+        f.chooseSurprise()
+        await flushSurprise()
+        const error = overlay.querySelector('[role="alert"]')
+        assert.equal(error.hidden, false)
+        assert.notEqual(f.win.getComputedStyle(error).display, 'none', 'the real fullscreen CSS must not hide the failure')
+        assert.equal(overlay.querySelector('.site-surprise-actions').hidden, false)
+        assert.equal(video.paused, true)
+        assert.equal(video.hasAttribute('src'), false)
+        assert.equal(f.player.paused, true)
+        delete video.play
+        f.chooseSurprise()
+        await flushSurprise()
+        assert.equal(calls, 2, 'retry must request a fresh random video instead of retaining a broken source')
+        assert.equal(video.paused, false)
+        assert.equal(error.hidden, true)
+    } finally { f.dom.window.close() }
+})
+
+test('autoplay denial keeps full-screen native controls without treating the source as broken', async () => {
+    let calls = 0
+    const f = await surpriseFixture(async () => { calls++; return surpriseResponse('Native fallback') })
+    try {
+        f.openSurprise()
+        await flushSurprise()
+        const overlay = f.surpriseOverlay()
+        const video = overlay.querySelector('video')
+        video.play = () => Promise.reject(new f.win.DOMException('Gesture required', 'NotAllowedError'))
+        f.chooseSurprise()
+        await flushSurprise()
+        assert.equal(overlay.classList.contains('is-playing'), true)
+        assert.equal(video.hidden, false)
+        assert.equal(video.controls, true)
+        assert.equal(overlay.querySelector('[role="alert"]').hidden, true)
+        assert.equal(f.player.paused, true)
+        delete video.play
+        await video.play()
+        assert.equal(video.paused, false)
+        assert.equal(calls, 1)
+    } finally { f.dom.window.close() }
+})
 
 test('music escapes HTML and rejects unsafe or credentialled audio URLs', async () => {
     const calls = []

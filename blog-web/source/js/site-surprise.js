@@ -6,27 +6,35 @@
     let prepared = null
     let overlay = null
 
-    const blogPath = value => {
-        const url = new URL(value, window.location.href)
-        if (url.origin === window.location.origin && url.pathname === '/surprise/') url.pathname = '/blog/surprise/'
-        return url.href
-    }
+    const pauseMusic = () => window.siteMusicPause?.()
 
     const loadVideo = async () => {
         if (!prepared) {
-            prepared = fetch('/api/surprise/random', {headers: {Accept: 'application/json'}, cache: 'no-store'})
+            const request = fetch('/api/surprise/random', {headers: {Accept: 'application/json'}, cache: 'no-store'})
                 .then(response => response.ok ? response.json() : response.json().then(body => Promise.reject(new Error(body.message || '暂无可播放视频'))))
                 .then(body => body.data)
-                .catch(error => { prepared = null; throw error })
+                .catch(error => {
+                    // A closed experience must not discard a newer request.
+                    if (prepared === request) prepared = null
+                    throw error
+                })
+            prepared = request
         }
         return prepared
     }
 
     const close = () => {
-        overlay?.remove()
+        const current = overlay
         overlay = null
-        document.body.classList.remove('site-surprise-open')
         prepared = null
+        const video = current?.querySelector('video')
+        if (video) {
+            video.pause()
+            video.removeAttribute('src')
+            video.load()
+        }
+        current?.remove()
+        document.body.classList.remove('site-surprise-open')
     }
 
     const render = () => {
@@ -43,25 +51,54 @@
         </div>`
         document.body.append(overlay)
         document.body.classList.add('site-surprise-open')
-        overlay.querySelector('.site-surprise-close').addEventListener('click', close)
-        overlay.addEventListener('click', event => { if (event.target === overlay) close() })
-        overlay.querySelectorAll('[data-surprise-choice]').forEach(button => button.addEventListener('click', async () => {
-            const video = overlay.querySelector('.site-surprise-video')
-            const error = overlay.querySelector('.site-surprise-error')
+        const current = overlay
+        const active = () => overlay === current && current.isConnected
+        const video = current.querySelector('.site-surprise-video')
+        const error = current.querySelector('.site-surprise-error')
+        const choices = current.querySelectorAll('[data-surprise-choice]')
+        let starting = false
+        current.querySelector('.site-surprise-close').addEventListener('click', close)
+        current.addEventListener('click', event => { if (event.target === current) close() })
+        video.addEventListener('play', () => {
+            if (active()) pauseMusic()
+            else video.pause()
+        })
+        choices.forEach(button => button.addEventListener('click', async () => {
+            if (!active() || starting) return
+            starting = true
+            choices.forEach(choice => { choice.disabled = true })
+            error.hidden = true
+            pauseMusic()
             try {
                 const source = await loadVideo()
+                if (!active()) return
+                pauseMusic()
                 video.src = source.url
                 video.hidden = false
                 video.muted = false
                 video.volume = 1
-                overlay.classList.add('is-fullscreen')
+                // Keep native controls full-screen even if autoplay is denied.
+                current.classList.add('is-fullscreen', 'is-playing')
+                current.querySelector('.site-surprise-actions').hidden = true
                 await video.play()
-                overlay.classList.add('is-playing')
-                overlay.querySelector('.site-surprise-actions').hidden = true
-                overlay.querySelector('.site-surprise-copy').textContent = source.title || '随机惊喜视频'
+                if (!active()) video.pause()
             } catch (reason) {
-                error.textContent = reason.message || '暂时没有可播放的惊喜视频'
+                if (!active()) return
+                // Autoplay policy is not a broken resource: leave native controls
+                // available for a second user gesture without fetching again.
+                if (reason?.name === 'NotAllowedError') return
+                current.classList.remove('is-fullscreen', 'is-playing')
+                current.querySelector('.site-surprise-actions').hidden = false
+                video.pause()
+                video.removeAttribute('src')
+                video.load()
+                video.hidden = true
+                prepared = null
+                error.textContent = '视频暂时无法播放，请重新选择重试。'
                 error.hidden = false
+            } finally {
+                starting = false
+                if (active()) choices.forEach(choice => { choice.disabled = false })
             }
         }))
     }
@@ -74,7 +111,7 @@
         // The persistent APlayer lives outside PJAX, so navigating to the
         // surprise experience does not destroy it. Pause it explicitly before
         // showing the age-choice overlay to prevent music and video overlap.
-        window.siteMusicPause?.()
+        pauseMusic()
         // Preload while the navigation click is still fresh. The choice click
         // itself then starts the video with sound on the same document.
         loadVideo().catch(() => {})
@@ -85,7 +122,7 @@
     document.addEventListener('pjax:send', close)
     const openOnSurprisePage = () => {
         if (document.querySelector('[data-surprise-page]')) {
-            window.siteMusicPause?.()
+            pauseMusic()
             loadVideo().catch(() => {})
             render()
         }

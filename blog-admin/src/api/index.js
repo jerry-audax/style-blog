@@ -1,4 +1,6 @@
 import http from './http'
+import {validateImageCapabilities} from '../media/imageCapabilities'
+import {normalizeImageCatalogPage} from '../media/imageCatalog'
 
 // ====== Pagination Helper ======
 export const paginationParams = (pageNum = 1, pageSize = 10) => ({pageNum, pageSize})
@@ -55,8 +57,12 @@ export const uploadImage = (file, purpose = 'article') => {
     form.append('file', file)
     return http.post(`/api/images/${purpose}`, form, {timeout: 45000})
 }
-export const listImages = (offset = 0, count = 20, search = '') =>
-    http.get('/api/images', {params: {offset, count, search}})
+export const listImages = (offset = 0, count = 20, search = '', capabilities) => {
+    const images = validateImageCapabilities({images:capabilities})
+    if (!images) throw new Error('图片能力未知，请核对前后端版本')
+    const route = images.storage === 'postgres' ? '/api/admin/media/images' : '/api/images'
+    return http.get(route, {params:{offset,count,search}}).then(page => normalizeImageCatalogPage(page,images))
+}
 export const deleteImage = (path) => http.delete('/api/images', {data: {path}, timeout: 45000})
 export const logout = () => http.post('/api/auth/logout')
 export const updateProfile = payload => http.put('/api/auth/profile', payload)
@@ -64,12 +70,14 @@ export const changePassword = payload => http.put('/api/auth/password', payload)
 export const uploadAvatar = file => uploadImage(file, 'avatar')
 
 // Official CLI authorization is backend-only; no AppID/key/token in frontend env.
+export const getMediaCapabilities = () => http.get('/api/admin/media/capabilities')
 export const getMusicStatus = () => http.get('/api/admin/music/status', {timeout: 65000})
 export const getMusicPlaylist = () => http.get('/api/admin/music/playlist')
 export const authorizeMusic = () => http.post('/api/admin/music/authorize', null, {timeout: 65000})
 export const syncMusic = () => http.post('/api/admin/music/sync', null, {timeout: 195000})
 export const revokeMusic = () => http.delete('/api/admin/music/authorization', {timeout: 65000})
 export const getMusicCatalog = () => http.get('/api/admin/music/catalog', {timeout: 65000})
+export const completeMusicCover = (id, payload) => http.post(`/api/admin/music/tracks/${encodeURIComponent(id)}/cover/backfill`, payload, {timeout: 120000})
 export const createMusicTrack = payload => http.post('/api/admin/music/tracks', payload)
 export const updateMusicTrack = (id, payload) => http.put(`/api/admin/music/tracks/${encodeURIComponent(id)}`, payload)
 export const deleteMusicTrack = id => http.delete(`/api/admin/music/tracks/${encodeURIComponent(id)}`)
@@ -92,3 +100,24 @@ export const createSurpriseVideo = (file, title = '惊喜视频', enabled = true
 }
 export const updateSurpriseVideo = (id, payload) => http.put(`/api/admin/surprise/videos/${encodeURIComponent(id)}`, payload)
 export const deleteSurpriseVideo = id => http.delete(`/api/admin/surprise/videos/${encodeURIComponent(id)}`, {timeout: 65000})
+
+// Durable upload protocol. Requests carry only the blog session, never an ImgBed credential.
+const uploadRoute = id => `/api/admin/media/uploads/${encodeURIComponent(id)}`
+export const createMediaUploadOperation = payload => http.post('/api/admin/media/uploads', payload, {silent: true})
+export const putMediaUploadContent = (id, file, {onUploadProgress} = {}) => {
+    const form = new FormData(); form.append('file', file)
+    return http.put(`${uploadRoute(id)}/content`, form, {timeout: 1800000, onUploadProgress, silent: true})
+}
+export const getMediaUploadOperation = id => http.get(uploadRoute(id), {silent: true})
+export const listMediaUploadOperations = (offset = 0, limit = 20) => http.get('/api/admin/media/uploads', {params: {offset, limit}, silent: true})
+export const pauseMediaUploadOperation = (id, operationVersion) => http.post(`${uploadRoute(id)}/pause`, {operationVersion}, {silent: true})
+export const recoverMediaUploadOperation = (id, operationVersion) => http.post(`${uploadRoute(id)}/recover`, {operationVersion}, {timeout: 600000, silent: true})
+export const bindMediaUploadOperation = (id, payload) => http.post(`${uploadRoute(id)}/bind`, payload, {silent: true})
+
+// Local-removal receipts; never call the storage provider from the browser.
+const deletionRoute = id => `/api/admin/media/deletions/${encodeURIComponent(id)}`
+export const previewMediaDeletion = (target, options = {}) => http.post('/api/admin/media/deletions/preview', {target}, {...options, silent: true})
+export const submitMediaDeletion = (payload, idempotencyKey, options = {}) => http.post('/api/admin/media/deletions', payload, {...options, headers: {'Idempotency-Key': idempotencyKey}, silent: true})
+export const getMediaDeletionOperation = (id, options = {}) => http.get(deletionRoute(id), {...options, silent: true})
+export const listMediaDeletionOperations = (offset = 0, limit = 20, options = {}) => http.get('/api/admin/media/deletions', {...options, params: {offset, limit}, silent: true})
+export const confirmMediaDeletionOwnership = (assetId, payload, options = {}) => http.post(`/api/admin/media/assets/${encodeURIComponent(assetId)}/deletion-ownership`, payload, {...options, silent: true})

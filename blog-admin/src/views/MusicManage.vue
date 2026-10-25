@@ -50,8 +50,7 @@
         <button type="button" class="primary" :disabled="busy || loading || !state.authorized" @click="sync">
           {{ busy === 'sync' ? '正在同步…' : '同步歌单' }}
         </button>
-        <p class="muted">这里仅同步网易云歌单资料。公开播放器独立读取图床 blog/music
-          直属目录的正常音频，不依赖网易云授权；同步不会上传、覆盖或删除音频。</p>
+        <p class="muted">这里仅同步网易云歌单资料。公开播放器读取本站歌单，不依赖网易云授权；同步不会上传、覆盖或删除音频。</p>
       </section>
     </div>
     <p v-if="message" class="music-message" :class="{ error: failed }" role="status">{{ message }}</p>
@@ -85,41 +84,51 @@
       <div class="catalog-heading">
         <div>
           <h2 id="music-catalog-title">本站自定义歌单</h2>
-          <p class="muted">网易云资料只用于初始匹配。保存后以本站目录为准，音频、封面和歌词可以独立替换。</p>
+          <p class="muted">以本站目录为准，网易云只提供可选资料。音频、封面和歌词的操作以当前开放能力为准。</p>
         </div>
-        <button type="button" class="primary" :disabled="catalogBusy" @click="createTrack">新增歌曲</button>
+        <button type="button" :disabled="catalogBusy || deleter.busy.value" @click="refreshCatalog">刷新歌单</button>
+        <button type="button" class="primary" :disabled="catalogBusy || !canMetadataWrite || createUncertain" @click="createTrack">新增歌曲</button>
       </div>
+      <p v-if="capabilityState === 'loading'" class="muted">正在检查资源操作能力…</p>
+      <p v-else-if="capabilityState === 'error'" class="muted">能力检查失败，写操作已禁用，请刷新歌单重试。</p>
+      <p v-else-if="trackedDeletions" class="muted">支持移除回执查询；本站移除按服务端开放能力操作，图床文件保留。</p>
+      <p v-else-if="trackedUploads" class="muted">支持可追踪上传、暂停与恢复；删除功能尚未开放。</p>
+      <p v-else-if="!capabilities.mediaUpload || !capabilities.mediaDelete" class="muted">资源上传和删除尚未接入；当前可编辑歌曲资料。</p>
       <p v-if="catalogError" class="music-message error" role="alert">{{ catalogError }}</p>
       <p v-if="catalogBusy && !catalog.length" class="empty">正在加载本站音乐…</p>
-      <p v-else-if="!catalog.length" class="empty">暂时没有发现已托管音频。可以先在图床的 blog/music 目录上传，或点击“新增歌曲”。</p>
+      <p v-else-if="!catalog.length" class="empty">暂无已登记歌曲。可先新增歌曲资料，资源上传以当前开放能力为准。</p>
       <div v-else class="catalog-list">
         <article v-for="track in catalog" :key="track.id" class="catalog-row">
           <div class="track-cover">
-            <img v-if="track.cover?.url" :src="track.cover.url" :alt="track.title" loading="lazy">
+            <img v-if="track.cover?.url" :src="track.cover.url" :alt="track.title" loading="lazy" decoding="async">
             <span v-else aria-hidden="true">♪</span>
           </div>
           <div class="track-fields">
-            <label>歌曲名称<input v-model.trim="track.title" maxlength="200"></label>
-            <label>歌手<input v-model.trim="track.artist" maxlength="200"></label>
-            <label class="enabled"><input v-model="track.enabled" type="checkbox"> 在公开歌单显示</label>
+            <label>歌曲名称<input v-model.trim="track.title" maxlength="200" :disabled="catalogBusy || uploader.isTargetBusy(track.id) || deleter.isTargetBusy(track.id)"></label>
+            <label>歌手<input v-model.trim="track.artist" maxlength="200" :disabled="catalogBusy || uploader.isTargetBusy(track.id) || deleter.isTargetBusy(track.id)"></label>
+            <label class="enabled"><input v-model="track.enabled" type="checkbox" :disabled="catalogBusy || uploader.isTargetBusy(track.id) || deleter.isTargetBusy(track.id)"> 在公开歌单显示</label>
             <div class="track-meta">
               <span>{{ track.audio?.path ? '音频已配置' : '缺少音频' }}</span>
-              <span>{{ track.cover?.url ? '封面已配置' : '无自定义封面' }}</span>
+              <span>{{ track.cover?.path ? '封面已入库' : track.cover?.url ? '外部封面参考（未入库）' : '无自定义封面' }}</span>
               <span>{{ track.lyrics?.url ? '歌词已配置' : '无歌词' }}</span>
+              <span v-if="capabilities?.metadataVersionRequired && !validVersion(track.version)">版本不可用，请刷新歌单</span>
             </div>
           </div>
           <div class="track-actions">
-            <button type="button" :disabled="catalogBusy" @click="saveTrack(track)">保存资料</button>
-            <label class="upload-button">替换音频<input type="file" accept="audio/*" hidden @change="uploadMedia(track, 'audio', $event)"></label>
-            <label class="upload-button">上传封面<input type="file" accept="image/jpeg,image/png,image/gif,image/webp" hidden @change="uploadMedia(track, 'cover', $event)"></label>
-            <label class="upload-button">上传歌词<input type="file" accept=".lrc,text/plain" hidden @change="uploadMedia(track, 'lyrics', $event)"></label>
-            <button v-if="track.audio?.path" type="button" class="danger" :disabled="catalogBusy" @click="removeMedia(track, 'audio')">删除音频</button>
-            <button v-if="track.cover?.path" type="button" class="danger" :disabled="catalogBusy" @click="removeMedia(track, 'cover')">删除封面</button>
-            <button v-if="track.lyrics?.path" type="button" class="danger" :disabled="catalogBusy" @click="removeMedia(track, 'lyrics')">删除歌词</button>
-            <button type="button" class="danger delete-track" :disabled="catalogBusy" @click="removeTrack(track)">删除歌曲</button>
+            <button type="button" :disabled="catalogBusy || !canCompleteCover(track)" @click="completeCover(track)">补全封面</button>
+            <button type="button" :disabled="catalogBusy || !canSave(track)" @click="saveTrack(track)">保存资料</button>
+            <label class="upload-button" :class="{disabled: catalogBusy || !canUpload(track, 'audio')}" :aria-disabled="catalogBusy || !canUpload(track, 'audio')">替换音频<input type="file" accept="audio/*" hidden :disabled="catalogBusy || !canUpload(track, 'audio')" @change="uploadMedia(track, 'audio', $event)"></label>
+            <label class="upload-button" :class="{disabled: catalogBusy || !canUpload(track, 'cover')}" :aria-disabled="catalogBusy || !canUpload(track, 'cover')">上传封面<input type="file" accept="image/jpeg,image/png,image/gif,image/webp" hidden :disabled="catalogBusy || !canUpload(track, 'cover')" @change="uploadMedia(track, 'cover', $event)"></label>
+            <label class="upload-button" :class="{disabled: catalogBusy || !canUpload(track, 'lyrics')}" :aria-disabled="catalogBusy || !canUpload(track, 'lyrics')">上传歌词<input type="file" accept=".lrc,text/plain" hidden :disabled="catalogBusy || !canUpload(track, 'lyrics')" @change="uploadMedia(track, 'lyrics', $event)"></label>
+            <button v-if="track.audio?.path" type="button" class="danger" :disabled="catalogBusy || !canRemove(track, 'audio')" @click="removeMedia(track, 'audio')">删除音频</button>
+            <button v-if="track.cover?.path || trackedDeletions && track.cover?.url" type="button" class="danger" :disabled="catalogBusy || !canRemove(track, 'cover')" @click="removeMedia(track, 'cover')">删除封面</button>
+            <button v-if="track.lyrics?.path" type="button" class="danger" :disabled="catalogBusy || !canRemove(track, 'lyrics')" @click="removeMedia(track, 'lyrics')">删除歌词</button>
+            <button type="button" class="danger delete-track" :disabled="catalogBusy || !canRemove(track)" @click="removeTrack(track)">删除歌曲</button>
           </div>
         </article>
       </div>
+      <MediaUploadPanel :uploader="uploader" :load-version="loadBindingVersion" />
+      <MediaDeletionPanel :deleter="deleter" />
     </section>
   </section>
 </template>
@@ -127,12 +136,38 @@
 <script setup>
 import {computed, onMounted, onBeforeUnmount, ref} from 'vue'
 import QRCode from 'qrcode'
-import {getMusicStatus, getMusicPlaylist, authorizeMusic, syncMusic, revokeMusic, getMusicCatalog, createMusicTrack, updateMusicTrack, deleteMusicTrack, uploadMusicMedia, deleteMusicMedia} from '../api'
+import {useAdminAuthStore} from '../stores/auth'
+import {useMediaUpload} from '../composables/useMediaUpload'
+import {useMediaDeletion} from '../composables/useMediaDeletion'
+import {validateDeletionCapabilities} from '../media/deletionCapabilities'
+import MediaDeletionPanel from '../components/MediaDeletionPanel.vue'
+import {validateUploadCapabilities, canUseLegacyUploads} from '../media/uploadCapabilities'
+import MediaUploadPanel from '../components/MediaUploadPanel.vue'
+import {getMusicStatus, getMusicPlaylist, authorizeMusic, syncMusic, revokeMusic, getMusicCatalog, getMediaCapabilities, createMusicTrack, updateMusicTrack, deleteMusicTrack, uploadMusicMedia, deleteMusicMedia} from '../api'
 
 const state = ref({configured: false, authorized: false, playlistId: '939817038'})
 const playlist = ref(null), authorization = ref(null), qr = ref('')
 const loading = ref(true), busy = ref(''), message = ref(''), failed = ref(false)
 const catalog = ref([]), catalogBusy = ref(false), catalogError = ref('')
+const capabilities = ref(null), capabilityState = ref('loading'), createUncertain = ref(false)
+const capabilityFields = ['metadataWrite', 'metadataVersionRequired', 'mediaUpload', 'mediaReplace', 'mediaDelete', 'catalogDelete']
+const allowed = field => capabilityState.value === 'ready' && capabilities.value?.[field] === true && (!['mediaDelete','catalogDelete'].includes(field) || canUseLegacyUploads(capabilities.value))
+const trackedUploads = computed(() => validateUploadCapabilities(capabilities.value))
+const uploader = useMediaUpload({auth: useAdminAuthStore(), capabilities: () => capabilities.value, targetType: 'MUSIC_TRACK', onSucceeded: mergeUploadedMusic})
+const trackedDeletions = computed(() => validateDeletionCapabilities(capabilities.value))
+const deleter = useMediaDeletion({auth: useAdminAuthStore(), capabilities: () => capabilities.value, onCommitted: mergeRemovedMusic})
+const deletionTarget = (track, kind) => ({kind: kind ? 'MUSIC_MEDIA' : 'MUSIC_TRACK', id: track.id, slot: kind?.toUpperCase() ?? null})
+const canRemove = (track, kind) => !uploader.isTargetBusy(track.id) && !deleter.busy.value && (trackedDeletions.value ? deleter.canDelete(deletionTarget(track, kind)) : allowed(kind ? 'mediaDelete' : 'catalogDelete'))
+const canMetadataWrite = computed(() => allowed('metadataWrite'))
+const validVersion = version => Number.isSafeInteger(version) && version >= 0
+const canSave = track => !uploader.isTargetBusy(track.id) && !deleter.isTargetBusy(track.id) && allowed('metadataWrite') && (!capabilities.value.metadataVersionRequired || validVersion(track.version))
+const canUpload = (track, kind) => !deleter.busy.value && !uploader.busy.value && !uploader.isTargetBusy(track.id) && allowed(track[kind]?.path ? 'mediaReplace' : 'mediaUpload') && (trackedUploads.value ? validVersion(track.version) && uploader.enabled.value : canUseLegacyUploads(capabilities.value))
+const canCompleteCover = track => trackedUploads.value && canUpload(track,'cover') && !track.cover?.path && /^[1-9]\d{0,19}$/.test(track.sourceId || '')
+async function completeCover(track) {
+  if (catalogBusy.value || !canCompleteCover(track)) return
+  await uploader.completeCover({targetId:track.id,expectedVersion:track.version})
+}
+let capabilityRevision = 0, catalogReadRevision = 0
 const playlistLink = computed(() => `https://music.163.com/#/playlist?id=${state.value.playlistId}`)
 const formattedTime = computed(() => playlist.value?.syncedAt ? new Date(playlist.value.syncedAt).toLocaleString('zh-CN') : '—')
 let alive = true, timer = null, revision = 0
@@ -162,16 +197,12 @@ function validAuthorization(value) {
 
 async function reload() {
   loading.value = true
+  const catalogueRequest = loadCatalog()
   try {
     const [status, songs] = await Promise.all([getMusicStatus(), getMusicPlaylist()])
-    let custom = []
-    if (typeof getMusicCatalog === 'function') {
-      try { custom = await getMusicCatalog(); catalogError.value = '' } catch (error) { catalogError.value = error.message }
-    }
     if (!alive) return
     state.value = status;
     playlist.value = songs
-    catalog.value = Array.isArray(custom) ? custom : []
     if (status.authorized) {
       stopPolling();
       authorization.value = null;
@@ -181,41 +212,74 @@ async function reload() {
   } catch (error) {
     notice(error.message, true)
   } finally {
+    await catalogueRequest
     if (alive) loading.value = false
   }
 }
 
 async function loadCatalog() {
+  if (catalogBusy.value) return
   if (typeof getMusicCatalog !== 'function') return
+  const current = ++catalogReadRevision
   catalogBusy.value = true
   catalogError.value = ''
-  try { catalog.value = await getMusicCatalog() } catch (error) { catalogError.value = error.message } finally { catalogBusy.value = false }
+  try {
+    const rows = await getMusicCatalog()
+    if (!Array.isArray(rows)) throw new Error('歌曲列表响应异常')
+    if (alive && current === catalogReadRevision) { catalog.value = rows; createUncertain.value = false }
+  } catch (error) { if (alive && current === catalogReadRevision) catalogError.value = error.message } finally { if (alive) catalogBusy.value = false }
 }
 
+async function loadCapabilities() {
+  const current = ++capabilityRevision
+  capabilityState.value = 'loading'; capabilities.value = null
+  try {
+    const result = await getMediaCapabilities()
+    if (!result || capabilityFields.some(field => typeof result[field] !== 'boolean')) throw new Error('资源能力响应异常')
+    if (alive && current === capabilityRevision) { capabilities.value = result; capabilityState.value = 'ready'; void uploader.restore(); void deleter.restore() }
+  } catch {
+    if (alive && current === capabilityRevision) capabilityState.value = 'error'
+  }
+}
+async function refreshCatalog() { if (catalogBusy.value || deleter.busy.value) return; await Promise.all([loadCapabilities(), loadCatalog()]) }
+
 async function createTrack() {
+  if (catalogBusy.value || !allowed('metadataWrite') || createUncertain.value) return
   catalogBusy.value = true
   catalogError.value = ''
   try {
     const track = await createMusicTrack({title: '未命名歌曲', artist: '', sourceId: '', enabled: true, sortOrder: catalog.value.length})
     catalog.value.push(track)
-    notice('已新增歌曲，请上传音频或完善资料')
-  } catch (error) { catalogError.value = error.message } finally { catalogBusy.value = false }
+    notice('已新增歌曲，请完善资料；资源操作以当前开放能力为准')
+  } catch (error) {
+    createUncertain.value = true
+    catalogError.value = `${error.message}；新增结果未确认，请先刷新核对，避免重复新增`
+  } finally { catalogBusy.value = false }
 }
 
 async function saveTrack(track) {
+  if (catalogBusy.value || !canSave(track)) return
+  const versioned = capabilities.value.metadataVersionRequired
   catalogBusy.value = true
   catalogError.value = ''
   try {
-    const saved = await updateMusicTrack(track.id, {title: track.title, artist: track.artist, sourceId: track.sourceId, enabled: track.enabled, sortOrder: track.sortOrder})
+    const payload = {title: track.title, artist: track.artist, sourceId: track.sourceId, enabled: track.enabled, sortOrder: track.sortOrder}
+    if (versioned) payload.expectedVersion = track.version
+    const saved = await updateMusicTrack(track.id, payload)
+    if (versioned && !validVersion(saved?.version)) {
+      track.version = null; catalogError.value = '保存结果版本未确认，请刷新核对'; return
+    }
     Object.assign(track, saved)
     notice('歌曲资料已保存，公开端将自动更新')
-  } catch (error) { catalogError.value = error.message } finally { catalogBusy.value = false }
+  } catch (error) { catalogError.value = error.status === 409 ? '资料已变化，请刷新；未保存输入已保留' : error.message } finally { catalogBusy.value = false }
 }
 
 async function uploadMedia(track, kind, event) {
   const file = event.target.files?.[0]
   event.target.value = ''
   if (!file) return
+  if (catalogBusy.value || !canUpload(track, kind)) { catalogError.value = '资源上传和删除尚未接入'; return }
+  if (trackedUploads.value) { await uploader.start({targetType:'MUSIC_TRACK',targetId:track.id,slot:kind.toUpperCase(),expectedVersion:track.version},file); return }
   catalogBusy.value = true
   catalogError.value = ''
   try {
@@ -225,7 +289,22 @@ async function uploadMedia(track, kind, event) {
   } catch (error) { catalogError.value = error.message } finally { catalogBusy.value = false }
 }
 
+function mergeUploadedMusic(result) {
+  const saved = result.music, row = catalog.value.find(item => item.id === saved?.id)
+  if (!alive || !row || !validVersion(saved?.version) || validVersion(row.version) && saved.version < row.version) return
+  // Refresh this row's resource facts, not any unsaved metadata drafts on this or other rows.
+  Object.assign(row, {audio:saved.audio,cover:saved.cover,lyrics:saved.lyrics,version:saved.version})
+  notice('资源已登记并绑定，公开端将自动更新')
+}
+async function loadBindingVersion(operation) {
+  const rows = await getMusicCatalog(), row = rows.find(item => item.id === operation.targetId)
+  if (!row || !validVersion(row.version)) throw new Error('版本不可用')
+  return row.version
+}
+
 async function removeMedia(track, kind) {
+  if (catalogBusy.value || !canRemove(track, kind)) { catalogError.value = '资源上传和删除尚未接入'; return }
+  if (trackedDeletions.value) { await deleter.prepare(deletionTarget(track, kind)); return }
   if (!window.confirm(`确认删除这首歌的${kind === 'audio' ? '音频' : kind === 'cover' ? '封面' : '歌词'}？`)) return
   catalogBusy.value = true
   catalogError.value = ''
@@ -237,6 +316,8 @@ async function removeMedia(track, kind) {
 }
 
 async function removeTrack(track) {
+  if (catalogBusy.value || !canRemove(track)) { catalogError.value = '资源上传和删除尚未接入'; return }
+  if (trackedDeletions.value) { await deleter.prepare(deletionTarget(track)); return }
   if (!window.confirm(`确认删除歌曲“${track.title || '未命名歌曲'}”？这会同时删除音频、封面和歌词文件，且无法恢复。`)) return
   catalogBusy.value = true
   catalogError.value = ''
@@ -245,6 +326,28 @@ async function removeTrack(track) {
     catalog.value = catalog.value.filter(item => item.id !== track.id)
     notice('歌曲及其关联文件已删除，公开端将自动更新')
   } catch (error) { catalogError.value = error.message } finally { catalogBusy.value = false }
+}
+
+function mergeRemovedMusic(operation) {
+  if (!alive) return
+  catalogReadRevision++
+  const target = operation.target
+  if (target.kind === 'MUSIC_TRACK') catalog.value = catalog.value.filter(row => row.id !== target.id)
+  else if (target.kind === 'MUSIC_MEDIA') {
+    const row = catalog.value.find(item => item.id === target.id)
+    if (row && !(validVersion(row.version) && BigInt(row.version) > BigInt(operation.originalVersion))) {
+      const next = BigInt(operation.originalVersion) + 1n
+      // Touch only confirmed resource facts; preserve every metadata draft.
+      row[target.slot.toLowerCase()] = null
+      if (validVersion(row.version) && String(row.version) === operation.originalVersion) {
+        row.version = next <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(next) : next.toString()
+      } else {
+        row.version = null
+        catalogError.value = '歌曲资料已被其他会话更新；未保存输入已保留，请刷新核对后再编辑保存'
+      }
+    }
+  }
+  notice('已从本站移除，图床文件保留')
 }
 
 function poll(currentRevision) {
@@ -346,7 +449,7 @@ async function revoke() {
   }
 }
 
-onMounted(reload)
+onMounted(() => { loadCapabilities(); reload() })
 onBeforeUnmount(() => {
   alive = false;
   stopPolling();
@@ -356,6 +459,7 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.upload-button.disabled { opacity: .5; cursor: not-allowed; }
 .music-page {
   max-width: 1180px;
   margin: 0 auto;

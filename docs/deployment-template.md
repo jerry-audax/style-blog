@@ -23,7 +23,7 @@ cp deploy/.env.example deploy/.env
 # 编辑 deploy/.env，填入数据库、JWT、发布令牌、图床令牌等值
 
 docker compose --env-file deploy/.env -f docker-compose.prod.yml config --quiet
-psql "$DB_URL" -v ON_ERROR_STOP=1 -f blog-server/src/main/resources/db/schema-postgresql.sql
+psql "$DB_URL" -v ON_ERROR_STOP=1 -f migration/001_schema_postgresql.sql
 docker compose --env-file deploy/.env -f docker-compose.prod.yml build
 docker compose --env-file deploy/.env -f docker-compose.prod.yml up -d
 docker compose --env-file deploy/.env -f docker-compose.prod.yml ps

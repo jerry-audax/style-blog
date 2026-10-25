@@ -1,0 +1,16 @@
+package com.blogsystem.domain.surprise.adapter.repository;
+
+import com.blogsystem.domain.surprise.model.SurpriseVideo;
+
+import java.util.List;
+import java.util.Optional;
+
+public interface SurpriseVideoRepository {
+    List<SurpriseVideo> findAll();
+
+    Optional<SurpriseVideo> findById(String id);
+
+    SurpriseVideo save(SurpriseVideo video);
+
+    void delete(String id);
+}

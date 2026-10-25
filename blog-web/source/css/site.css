@@ -273,6 +273,10 @@ html[data-theme="dark"] #an_music_bg {
 #content-inner #recent-posts > .recent-post-item > .recent-post-info > .content {
     opacity: 1 !important;
     height: auto !important;
+    /* Match .recent-post-info-top and .article-meta-wrap in the theme. */
+    padding-inline: 32px;
+    box-sizing: border-box;
+    overflow-wrap: anywhere;
 }
 
 /* The category strip in the screenshot is part of the theme's #category-bar,

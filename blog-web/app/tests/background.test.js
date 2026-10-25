@@ -84,19 +84,19 @@ afterEach(() => {
 })
 
 describe('React Bits particles integration', () => {
-    it('uses every supplied screenshot parameter and all 350 geometry records', () => {
+    it('renders all 500 approved particles with the camera at distance 20', () => {
         expect(particleOptions).toEqual({
-            particleCount: 350, particleSpread: 10, speed: 0.1,
+            particleCount: 500, particleSpread: 10, speed: 0.1,
             particleColors: ['#6366F1', '#10B981', '#ffffff', '#EC4899'],
             moveParticlesOnHover: true, particleHoverFactor: 1, alphaParticles: false,
-            particleBaseSize: 100, sizeRandomness: 1, cameraDistance: 25, disableRotation: false, pixelRatio: 1,
+            particleBaseSize: 100, sizeRandomness: 1, cameraDistance: 20, disableRotation: false, pixelRatio: 1,
         })
         startSiteBackground()
         expect(records.renderers[0].options).toEqual({dpr: 1, depth: false, alpha: true})
-        expect(records.geometries[0].attributes.position.data.length).toBe(350 * 3)
-        expect(records.geometries[0].attributes.random.data.length).toBe(350 * 4)
-        expect(records.geometries[0].attributes.color.data.length).toBe(350 * 3)
-        expect(records.cameras[0].position.set).toHaveBeenCalledWith(0, 0, 25)
+        expect(records.geometries[0].attributes.position.data.length).toBe(500 * 3)
+        expect(records.geometries[0].attributes.random.data.length).toBe(500 * 4)
+        expect(records.geometries[0].attributes.color.data.length).toBe(500 * 3)
+        expect(records.cameras[0].position.set).toHaveBeenCalledWith(0, 0, 20)
         expect(records.programs[0].uniforms.uSpread.value).toBe(10)
         expect(records.programs[0].uniforms.uBaseSize.value).toBe(100)
         expect(records.programs[0].uniforms.uAlphaParticles.value).toBe(0)

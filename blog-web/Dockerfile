@@ -1,4 +1,4 @@
-FROM node:22-alpine AS builder
+FROM node:22.23.3-alpine3.23 AS builder
 
 WORKDIR /app
 ARG BLOG_SITE_URL

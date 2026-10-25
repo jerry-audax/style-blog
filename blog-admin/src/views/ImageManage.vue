@@ -2,68 +2,86 @@
   <section class="page">
     <header class="page-header">
       <h2 class="page-title">图片库</h2>
-      <p class="page-sub">Cloudflare ImgBed · Telegram 图床。正文、封面与头像统一管理，仅展示本博客图片目录。</p>
+      <p class="page-sub">Cloudflare ImgBed · Telegram 保存文件，PostgreSQL 保存登记元数据。</p>
+      <p v-if="imageUpload.imageCapabilities.value?.storage === 'postgres'" class="page-sub">仅显示已登记图片；图床历史未登记文件未列出，不代表文件不存在。图片删除待受控引用保护接通，当前不会删除图床文件。</p>
     </header>
     <form class="filters" @submit.prevent="find">
       <el-input v-model="search" aria-label="搜索图片" placeholder="搜索图片名称" maxlength="100" clearable/>
       <el-button native-type="submit" :disabled="busy">搜索</el-button>
       <el-button @click="load" :disabled="busy">刷新</el-button>
       <el-select v-model="uploadPurpose" aria-label="上传图片用途" :disabled="busy" style="width:130px"><el-option label="正文图片" value="article"/><el-option label="文章封面" value="cover"/><el-option label="博主头像" value="avatar"/></el-select>
-      <el-button type="primary" :disabled="busy" @click="fileInput.click()">上传图片</el-button>
+      <el-button type="primary" :disabled="busy || !imageUpload.enabled.value" @click="fileInput.click()">上传图片</el-button>
       <input ref="fileInput" type="file" accept="image/jpeg,image/png,image/gif,image/webp" hidden @change="upload"/>
     </form>
     <p class="page-sub">JPEG / PNG / GIF / WebP · 头像最大 2 MiB，正文与封面最大 10 MiB。公开链接，请勿上传私人资料。</p>
-    <p v-if="error" class="error" role="alert">{{ error }} — 可刷新列表核对结果。</p>
+    <p v-if="displayError" class="error" role="alert">{{ displayError }} — 可刷新列表核对结果。</p>
+    <MediaUploadPanel :uploader="imageUpload.uploader"/>
     <p v-if="busy" role="status">处理中…</p>
     <div class="image-grid" :aria-busy="busy">
-      <article class="image-card" v-for="image in images" :key="image.path">
+      <article class="image-card" v-for="image in images" :key="imageKey(image)">
         <el-image class="image-preview" :src="image.url" :preview-src-list="[image.url]" fit="contain" lazy
-                  :alt="image.path">
+                  :alt="imageName(image)">
           <template #error><span class="page-sub">图片不可用，请核对图床访问设置</span></template>
         </el-image>
         <div class="image-info">
-          <span class="image-kind">{{ purpose(image.path) }}</span>
-          <p class="image-path" :title="image.path">{{ image.path }}</p>
-          <p class="page-sub">{{ image.mediaType }}{{ image.size ? ' · ' + formatSize(image.size) : '' }}</p>
+          <span class="image-kind">{{ purpose(image) }}{{ image.status ? ' · ' + image.status : '' }}</span>
+          <p class="image-path" :title="imageName(image)">{{ imageName(image) }}</p>
+          <p class="page-sub">{{ imageKey(image) }}</p>
+          <p class="page-sub">{{ imageMime(image) }} · {{ formatSize(imageFileSize(image)) }}</p>
           <div class="image-actions">
             <el-button size="small" @click="copy(image.url)">复制链接</el-button>
-            <el-button size="small" type="danger" :disabled="busy" @click="remove(image)">删除图片</el-button>
+            <el-button size="small" type="danger" :disabled="busy || !imageUpload.imageCapabilities.value?.deleteEnabled" :title="imageUpload.imageCapabilities.value?.storage === 'postgres' ? '待受控引用保护接通，当前保留文件' : ''" @click="remove(image)">删除图片</el-button>
           </div>
         </div>
       </article>
     </div>
-    <p v-if="!busy && !error && !images.length" class="empty">暂无图片。可以上传新图片，或调整搜索条件。</p>
+    <p v-if="!busy && !displayError && !images.length" class="empty">暂无已登记图片。可以上传新图片，或调整搜索条件。</p>
     <el-pagination v-model:current-page="page" :page-size="20" :total="total" layout="prev, pager, next, total"
                    :disabled="busy" @current-change="load"/>
   </section>
 </template>
 
 <script setup>
-import {onMounted, ref} from 'vue'
+import {computed,onBeforeUnmount,onMounted,ref,watch} from 'vue'
 import {ElMessage, ElMessageBox} from 'element-plus'
-import {listImages, uploadImage, deleteImage} from '../api'
-import {validateImageUpload, imagePurposeLabel as purpose, formatImageSize as formatSize} from '../utils/images'
+import {listImages, deleteImage} from '../api'
+import {useAdminAuthStore} from '../stores/auth'
+import {useImageUpload} from '../composables/useImageUpload'
+import MediaUploadPanel from '../components/MediaUploadPanel.vue'
+import {imageKey,imageName,imageFileSize,imageMime,imagePurposeLabel as purpose, formatImageSize as formatSize} from '../utils/images'
 
-const images = ref([]), total = ref(0), page = ref(1), search = ref(''), busy = ref(false), error = ref(''),
+const auth=useAdminAuthStore()
+const images = ref([]), total = ref(0), page = ref(1), search = ref(''), loading = ref(false), deleting=ref(false), error = ref(''),
     fileInput = ref(null)
 const uploadPurpose = ref('article')
-let activeSearch = ''
+let activeSearch = '', generation=0, deletionGeneration=0, disposed=false
+const imageUpload=useImageUpload({auth,purpose:()=>uploadPurpose.value,onSucceeded:async()=>{
+  page.value=1;activeSearch='';search.value='';await load(true)
+}})
+const busy=computed(()=>loading.value || deleting.value || imageUpload.busy.value)
+const displayError=computed(()=>error.value || imageUpload.error.value)
 const confirmedDeleted = new Set()
-const fetchPage = async () => {
-  const data = await listImages((page.value - 1) * 20, 20, activeSearch)
-  images.value = data.images.filter((image) => !confirmedDeleted.has(image.path))
+const fetchPage = async (current) => {
+  const capabilities=await imageUpload.loadCapabilities()
+  if(!current())return
+  if(!capabilities)throw new Error(imageUpload.error.value || '图片能力未知，请核对前后端版本')
+  const data = await listImages((page.value - 1) * 20, 20, activeSearch,capabilities)
+  if(!current())return
+  images.value = data.images.filter((image) => !confirmedDeleted.has(imageKey(image)))
   total.value = data.total
 }
-const load = async () => {
-  if (busy.value) return
-  busy.value = true
+const load = async (force=false) => {
+  if (loading.value && force!==true || disposed) return
+  const epoch=++generation,who=auth.verifiedUserId,token=auth.token
+  const current=()=>!disposed && epoch===generation && who===auth.verifiedUserId && token===auth.token
+  loading.value = true
   error.value = ''
   try {
-    await fetchPage()
+    await fetchPage(current)
   } catch (e) {
-    error.value = e.message
+    if(current())error.value = e.message
   } finally {
-    busy.value = false
+    if(current())loading.value = false
   }
 }
 const find = () => {
@@ -77,21 +95,9 @@ const upload = async (event) => {
   const file = event.target.files?.[0]
   event.target.value = ''
   if (!file || busy.value) return
-  try {validateImageUpload(file, uploadPurpose.value)} catch (e) {error.value = e.message; return}
-  busy.value = true
   error.value = ''
-  try {
-    await uploadImage(file, uploadPurpose.value)
-    ElMessage.success('图片已上传')
-    page.value = 1
-    activeSearch = '';
-    search.value = ''
-    await fetchPage()
-  } catch (e) {
-    error.value = e.message
-  } finally {
-    busy.value = false
-  }
+  const image=await imageUpload.start(file)
+  if(image && !disposed)ElMessage.success('图片已登记，文件不会自动绑定到文章或头像')
 }
 const copy = async (url) => {
   try {
@@ -102,25 +108,35 @@ const copy = async (url) => {
   }
 }
 const remove = async (image) => {
-  if (busy.value) return
-  busy.value = true
+  const capabilities=imageUpload.imageCapabilities.value
+  if (busy.value || capabilities?.storage!=='legacy-json' || !capabilities.deleteEnabled) return
+  const who=auth.verifiedUserId,token=auth.token,epoch=++deletionGeneration
+  const current=()=>!disposed && who===auth.verifiedUserId && token===auth.token && epoch===deletionGeneration
+  deleting.value = true
   try {
     await ElMessageBox.confirm(`删除 ${image.path}？此操作不可恢复，引用它的历史文章、封面或头像将无法显示。请先确认不再使用。`, '删除图片', {
       confirmButtonText: '确认永久删除', cancelButtonText: '保留图片', type: 'warning', autofocus: false,
     })
+    if(!current())return
     error.value = ''
     await deleteImage(image.path)
+    if(!current())return
     confirmedDeleted.add(image.path)
     ElMessage.success('删除请求已确认；图床列表和公开缓存可能延迟更新，图片无法恢复')
     if (images.value.length === 1 && page.value > 1) page.value--
-    await fetchPage()
+    await load(true)
   } catch (e) {
-    if (e !== 'cancel' && e !== 'close') error.value = e.message
+    if (current() && e !== 'cancel' && e !== 'close') error.value = e.message
   } finally {
-    busy.value = false
+    if(current())deleting.value = false
   }
 }
 onMounted(load)
+watch(()=>imageUpload.uploader.operations.value.map(op=>op.operationId+':'+op.status).join('|'),()=>{
+  if(imageUpload.uploader.operations.value.some(op=>op.status==='SUCCEEDED'))void load()
+})
+watch(()=>[auth.verifiedUserId,auth.token],()=>{generation++;deletionGeneration++;loading.value=false;deleting.value=false;images.value=[];error.value='';confirmedDeleted.clear();if(auth.verifiedUserId)void load(true)},{flush:'sync'})
+onBeforeUnmount(()=>{disposed=true;generation++})
 </script>
 
 <style scoped>

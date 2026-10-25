@@ -3,7 +3,8 @@ subtitle: 记录技术，分享思考，保持好奇。
 description: 分享技术学习、系统设计与开发实践的个人博客。
 author: Javerry
 language: zh-CN
-timezone: Asia/Shanghai
+# 留空以跟随运行环境的系统时区，不固定为某个地区。
+timezone: ''
 url: http://localhost:5173/blog
 root: /blog/
 permalink: article/:title/

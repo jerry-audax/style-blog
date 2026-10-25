@@ -46,6 +46,7 @@
     let playerElement
     const playbackPreparations = new WeakMap()
     const playbackAttempts = new WeakMap()
+    const lyricStates = new WeakMap()
     let playbackState = 'loading'
     const consoleMusic = document.getElementById('consoleMusic')
     const consoleStatus = document.createElement('span')
@@ -143,17 +144,21 @@
                 this.aplayer.destroy();
                 this.replaceChildren()
             }
-            // Attempt autoplay ourselves so a browser rejection has an explicit fallback.
-            Object.assign(this.config, {autoplay: false, preload: 'none', lrcType: 3, order: 'random'})
-            originalLoad.call(this, audio)
-            for (const song of this.aplayer.list.audios) if (song.artist === '\u00a0') song.artist = ''
-            // Random order only controls subsequent tracks in APlayer: its initial
-            // index is still zero. Choose once before any playback attempt, never on
-            // pause/resume or PJAX mounts so the shared media and position stay intact.
-            if (this.aplayer.list.audios.length > 1) {
-                const startIndex = Math.floor(Math.random() * this.aplayer.list.audios.length)
-                if (startIndex !== this.aplayer.list.index) this.aplayer.list.switch(startIndex)
-            }
+            const startIndex = audio.length > 1 ? Math.floor(Math.random() * audio.length) : 0
+            // APlayer first renders audio[0]'s picture, then selects its initial
+            // track. With empty resource fields this cannot fetch discarded cover
+            // or lyric files. Inline LRC mode disables its unbounded vendor XHR.
+            Object.assign(this.config, {autoplay: false, preload: 'none', lrcType: 1, order: 'random'})
+            originalLoad.call(this, audio.map(song => ({...song,cover:'',pic:'',lrc:''})))
+            const player = this.aplayer
+            lyricStates.set(player,{urls:audio.map(song=>song.lrc),cache:new Map(),pending:null})
+            player.list.audios.forEach((song,index) => {
+                if (song.artist === '\u00a0') song.artist = ''
+                song.cover=audio[index].cover; song.pic=audio[index].pic
+            })
+            if (startIndex !== player.list.index) player.list.switch(startIndex)
+            const picture=player.container.querySelector('.aplayer-pic')
+            if (picture) picture.style.backgroundImage=audio[startIndex].cover ? `url(${JSON.stringify(audio[startIndex].cover)})` : ''
             bindPlayer(this)
         } catch {
             if (!this.aplayer) {
@@ -197,7 +202,8 @@
         if (!player) return
         player.sitePersistent = true
         bindPlaybackRecovery(element, player)
-        player.on('listswitch', () => queueMicrotask(changeCover))
+        player.on('listswitch', () => queueMicrotask(() => {changeCover(); loadCurrentLyrics(player)}))
+        player.on('destroy', () => lyricStates.get(player)?.pending?.controller.abort())
         // APlayer emits these before it changes the list class.
         player.on('listshow', () => syncMusicDrawer(true))
         player.on('listhide', () => syncMusicDrawer(false))
@@ -228,6 +234,47 @@
         if (background) background.style.backgroundImage = page && cover ? `url(${JSON.stringify(cover)})` : ''
         disc.querySelector('.site-music-disc-art').style.backgroundImage = cover ? `url(${JSON.stringify(cover)})` : ''
         musicState(player ? !player.paused : false)
+    }
+
+    function loadCurrentLyrics(player) {
+        const state=lyricStates.get(player)
+        if (!state || !player.lrc) return
+        const index=player.list.index, url=state.urls[index]
+        if (state.pending && (!page || state.pending.index !== index)) {
+            state.pending.controller.abort(); state.pending=null
+        }
+        if (!page || !url) return
+        const show=lines => {
+            player.lrc.parsed[index]=lines
+            player.lrc.switch(index)
+            player.lrc.update()
+        }
+        if (state.cache.has(url)) {show(state.cache.get(url)); return}
+        if (state.pending?.index === index) return
+        const controller=new AbortController()
+        const pending={index,controller}; state.pending=pending
+        const timeout=setTimeout(()=>{pending.timedOut=true;controller.abort()},12000)
+        show([[0,'正在加载歌词…']])
+        fetch(url,{credentials:'omit',redirect:'error',signal:controller.signal})
+            .then(async response => {
+                if (!response.ok) throw new Error('lyrics unavailable')
+                const text=await response.text()
+                if (text.length > 512000) throw new Error('lyrics too large')
+                // The installed APlayer lyric template escapes text itself.
+                // Its update() requires at least one line, including for empty LRC.
+                const lines=player.lrc.parse(text)
+                return lines.length ? lines : [[0,'歌词暂不可用']]
+            })
+            .then(lines => {
+                if (controller.signal.aborted) return
+                state.cache.set(url,lines)
+                if (page && playerElement?.aplayer === player && player.list.index === index) show(lines)
+            })
+            .catch(() => {
+                if ((!controller.signal.aborted || pending.timedOut) && state.pending===pending && page && playerElement?.aplayer === player && player.list.index === index)
+                    show([[0,'歌词暂不可用']])
+            })
+            .finally(() => {clearTimeout(timeout);if(state.pending===pending)state.pending=null})
     }
 
     function mountPage() {
@@ -263,6 +310,7 @@
             if (player.container.parentNode !== playerElement) playerElement.append(player.container)
         }
         changeCover()
+        if (player) loadCurrentLyrics(player)
         syncMusicDrawer()
         musicState(player ? !player.paused : false)
     }
@@ -568,6 +616,8 @@
     // Only its UI is shown on the music page; return that UI before PJAX replaces it.
     document.addEventListener('pjax:send', () => {
         const player = playerElement?.aplayer
+        const lyrics=lyricStates.get(player)
+        if (lyrics?.pending) {lyrics.pending.controller.abort(); lyrics.pending=null}
         if (page && mobileMusic?.matches) player?.list.hide()
         if (player && player.container.parentNode !== playerElement) playerElement.append(player.container)
     })

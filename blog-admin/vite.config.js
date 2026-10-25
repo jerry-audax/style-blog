@@ -6,6 +6,7 @@ export default defineConfig({
     server: {
         port: 5174,
         proxy: {
+            '/api/admin/media/uploads/': {target: 'http://localhost:8080', timeout: 1800000, proxyTimeout: 1800000},
             '/api': 'http://localhost:8080'
         }
     },

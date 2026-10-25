@@ -1,0 +1,4 @@
+FROM blog-system-web:latest
+RUN sed -i 's/\r$//' /usr/local/bin/blog-web-entrypoint
+RUN rm -rf /usr/share/nginx/html && cp -R /app/dist /usr/share/nginx/html
+COPY blog-web/deploy/production-branding.cjs /app/scripts/production-branding.js

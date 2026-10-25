@@ -1,56 +1,63 @@
 <template>
   <el-dialog :model-value="modelValue" @update:model-value="$emit('update:modelValue', $event)" :title="purpose === 'cover' ? '从图片库选择封面' : '从图片库插入正文图片'" width="760px" append-to-body>
-    <p class="picker-hint">复用 Cloudflare ImgBed · Telegram 的现有图片。选择只修改当前编辑内容，不删除文件。</p>
-    <form class="picker-toolbar" @submit.prevent="find"><el-input v-model="search" placeholder="搜索图片名称" aria-label="搜索图床图片" :disabled="uploading" clearable/><el-button native-type="submit" :disabled="uploading">搜索</el-button><el-button type="primary" :loading="uploading" @click="fileInput?.click()">上传并使用</el-button><input ref="fileInput" type="file" :accept="imageAccept" hidden @change="upload"/></form>
-    <p v-if="error" class="picker-error" role="alert">{{ error }} <el-button size="small" :disabled="loading || uploading" @click="load">刷新核对</el-button></p>
+    <p class="picker-hint">{{ imageUpload.imageCapabilities.value?.storage === 'postgres' ? '仅显示已登记图片；图床历史未登记文件不在此列表。' : '复用 Cloudflare ImgBed · Telegram 的现有图片。' }}选择只修改当前草稿，不保存文章或删除文件。</p>
+    <form class="picker-toolbar" @submit.prevent="find"><el-input v-model="search" placeholder="搜索图片名称" aria-label="搜索图床图片" :disabled="uploading" clearable/><el-button native-type="submit" :disabled="uploading">搜索</el-button><el-button type="primary" :loading="uploading" :disabled="!imageUpload.enabled.value" @click="fileInput?.click()">上传并使用</el-button><input ref="fileInput" type="file" :accept="imageAccept" hidden @change="upload"/></form>
+    <p v-if="displayError" class="picker-error" role="alert">{{ displayError }} <el-button size="small" :disabled="loading || uploading" @click="load">刷新核对</el-button></p>
     <el-skeleton v-if="loading" :rows="4" animated/>
     <div v-else-if="!error" class="picker-grid">
-      <button v-for="image in images" :key="image.path" type="button" class="picker-image" :disabled="uploading" @click="choose(image)"><img :src="image.url" loading="lazy" alt=""/><span :title="image.path">{{ image.path.split('/').at(-1) }}</span><small>{{ imagePurposeLabel(image.path) }}</small></button>
+      <button v-for="image in images" :key="imageKey(image)" type="button" class="picker-image" :disabled="uploading" @click="choose(image)"><img :src="image.url" loading="lazy" decoding="async" alt=""/><span :title="imageName(image)">{{ imageName(image) }}</span><small>{{ imagePurposeLabel(image) }}</small></button>
       <p v-if="!images.length" class="picker-empty">没有匹配的图片。调整搜索条件，或上传一张新图片。</p>
     </div>
     <el-pagination v-if="total > 12" v-model:current-page="page" :page-size="12" :total="total" layout="prev, pager, next" :disabled="loading || uploading" @current-change="load"/>
+    <MediaUploadPanel :uploader="imageUpload.uploader"/>
     <template #footer><span class="picker-hint">JPEG / PNG / GIF / WebP · 最大 10 MiB</span><el-button @click="$emit('update:modelValue', false)">关闭</el-button></template>
   </el-dialog>
 </template>
 <script setup>
-import {onBeforeUnmount, ref, watch} from 'vue'
-import {listImages, uploadImage} from '../api'
-import {imageAccept, imagePurposeLabel, validateImageUpload} from '../utils/images'
+import {computed,onBeforeUnmount, ref, watch} from 'vue'
+import {listImages} from '../api'
+import {useAdminAuthStore} from '../stores/auth'
+import {useImageUpload} from '../composables/useImageUpload'
+import MediaUploadPanel from './MediaUploadPanel.vue'
+import {imageAccept, imagePurposeLabel, imageKey, imageName} from '../utils/images'
 const props = defineProps({modelValue: Boolean, purpose: {type: String, default: 'article', validator: value => ['article', 'cover'].includes(value)}})
 const emit = defineEmits(['update:modelValue', 'select'])
-const images = ref([]), page = ref(1), total = ref(0), search = ref(''), loading = ref(false), uploading = ref(false), error = ref(''), fileInput = ref(null)
+const auth=useAdminAuthStore()
+const images = ref([]), page = ref(1), total = ref(0), search = ref(''), loading = ref(false), error = ref(''), fileInput = ref(null)
 let generation = 0, activeSearch = '', disposed = false
+const imageUpload=useImageUpload({auth,purpose:()=>props.purpose,onSucceeded:image=>{
+  if(!disposed && props.modelValue){emit('select',image);emit('update:modelValue',false)}
+}})
+const uploading=computed(()=>imageUpload.busy.value)
+const displayError=computed(()=>error.value || imageUpload.error.value)
 const load = async () => {
-  const request = ++generation
+  const request = ++generation,owner=auth.verifiedUserId,token=auth.token
+  const current=()=>!disposed && request===generation && props.modelValue && owner===auth.verifiedUserId && token===auth.token
   loading.value = true; error.value = ''
   try {
-    const result = await listImages((page.value - 1) * 12, 12, activeSearch)
-    if (request !== generation || !props.modelValue) return
+    const capabilities=await imageUpload.loadCapabilities()
+    if(!current())return
+    if(!capabilities)throw new Error(imageUpload.error.value || '图片能力未知，请核对版本')
+    const result = await listImages((page.value - 1) * 12, 12, activeSearch,capabilities)
+    if (!current()) return
     if (!Array.isArray(result?.images)) throw new Error('图片列表格式错误')
     images.value = result.images; total.value = result.total
-  } catch (e) {if (request === generation && props.modelValue) error.value = e?.message || '图片加载失败'}
+  } catch (e) {if (current()) error.value = e?.message || '图片加载失败'}
   finally {if (request === generation) loading.value = false}
 }
 const find = () => {if (uploading.value) return; activeSearch = search.value.trim(); page.value = 1; load()}
-const choose = image => {if (disposed || !props.modelValue) return; emit('select', image); emit('update:modelValue', false)}
+const choose = image => {if (disposed || !props.modelValue || uploading.value) return; imageUpload.invalidate();emit('select', image); emit('update:modelValue', false)}
 const upload = async event => {
   const file = event.target.files?.[0]; event.target.value = ''
   if (!file || uploading.value) return
-  error.value = ''
-  try {validateImageUpload(file, props.purpose)} catch (e) {error.value = e.message; return}
-  uploading.value = true
-  // The request may finish after close. Never re-upload an uncertain result automatically.
-  const intent = generation, purpose = props.purpose
-  try {
-    const image = await uploadImage(file, purpose)
-    if (!disposed && props.modelValue && generation === intent) choose(image)
-  } catch (e) {if (!disposed && props.modelValue && generation === intent) error.value = e?.message || '上传失败，请先刷新核对图床，勿重复上传'}
-  finally {if (!disposed) uploading.value = false}
+  error.value = '';await imageUpload.start(file)
 }
-watch(() => props.modelValue, open => {
+watch(() => [props.modelValue,props.purpose], ([open]) => {
+  imageUpload.invalidate()
   if (open) {page.value = 1; search.value = ''; activeSearch = ''; load()}
   else {generation++; loading.value = false}
 }, {immediate: true})
+watch(()=>[auth.verifiedUserId,auth.token],()=>{generation++;images.value=[];if(props.modelValue)void load()},{flush:'sync'})
 onBeforeUnmount(() => {disposed = true; generation++})
 </script>
 <style scoped>

@@ -12,8 +12,6 @@ target/
 docs/
 data/
 /music/
-**/src/test/
-**/src/__tests__/
 *.key
 *.pem
 *.p12

@@ -1,4 +1,4 @@
-// Exact particle settings supplied in the screenshot; size follows the viewport.
+// Current visual settings confirmed on 2026-10-18; size follows the viewport.
 export const particleOptions = Object.freeze({
     particleCount: 500,
     particleSpread: 10,

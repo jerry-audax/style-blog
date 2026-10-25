@@ -1,4 +1,7 @@
 target
+**/target
+**/node_modules
+.artifacts
 .git
 .gitignore
 *.log
@@ -9,4 +12,5 @@ target
 music-runtime/node_modules
 **/*.pem
 **/*.key
+.secrets
 data

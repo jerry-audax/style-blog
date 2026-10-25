@@ -2,21 +2,21 @@
 
 个人技术博客：Hexo + 安知鱼原主题负责公开阅读，Vue 负责文章动态展示与独立管理后台，Spring Boot 提供业务 API。后端采用 DDD 模块化单体；独立 AI 服务保留，当前不启用。
 
-文档基线更新：2026-10-04。先看 [文档索引](docs/README.md)、[产品定位](docs/product-positioning-and-requirements.md) 和 [技术开发基线](docs/technical-development-baseline.md)。
+文档基线更新：2026-10-16。先看 [文档索引](docs/README.md)、[产品定位](docs/product-positioning-and-requirements.md)、[技术开发基线](docs/technical-development-baseline.md) 和 [六模块架构实施记录](docs/backend-layering-implementation-2026-10-16.md)。
 
 ## 项目结构
 
 ```text
 blog-system/
-├── blog-server/     Spring Boot 业务服务，默认端口 8080
+├── blog-server/     六模块 Maven 聚合工程，单一 Spring Boot 服务，默认端口 8080
 ├── blog-ai/         独立 AI/RAG 服务，暂不启用
 ├── blog-web/        Hexo 技术博客 + Vue 只读动态组件
 ├── blog-admin/      Vue 管理后台，仅单博主密码登录
-├── tools/           本地启动、数据库迁移和音频验证工具
-├── docs/            当前基线、实施记录、待办及必要历史资料
-├── pom.xml          后端多模块聚合构建
+├── blog-server/tools/           本地启动、数据库迁移和音频验证工具
+├── docs/            当前六模块架构、功能契约、实施证据与待办
 ├── Jenkinsfile      测试、打包、Docker 镜像构建与推送
-├── docker-compose.prod.yml`r`n└── docker-compose.host-gateway.yml
+├── docker-compose.prod.yml
+└── docker-compose.host-gateway.yml
 ```
 
 技术栈：Java 17、Spring Boot 3.3.2、MyBatis-Plus 3.5.7、Sa-Token 1.38.0、PostgreSQL、Redis；公开端 Hexo 8.1.2 / hexo-theme-anzhiyu 1.7.0 / Vue 3 / Vite 7，管理端 Vue 3 / Element Plus / Tiptap。公开端要求 Node.js >=22.12。
@@ -35,21 +35,22 @@ blog-system/
 
 ## 后端架构
 
-主站上下文为 `identity / content / interaction / asset / administration / music / ai / shared`，统一采用：
+主站拆成六个物理层模块，仍只部署一个后端进程。模块内部按业务组织：
 
 ```text
-interfaces       HTTP 请求、响应、权限入口
-    ↓
-application      用例编排与事务
-    ↓
-domain           业务模型、规则、repository/query 契约
-    ↑
-infrastructure   实现仓储、MyBatis、Redis、图床 HTTP、官方 CLI 和模型适配
+blog-app             唯一 Boot JAR；启动、配置、Bean 装配和资源
+blog-trigger         HTTP/CLI/启动事件 → application/domain/types
+blog-application     用例、事务、跨业务协调 → domain/types
+blog-infrastructure  数据访问、图床、Redis、JSON、模型适配 → domain/types
+blog-domain          业务模型、规则、repository/gateway 契约 → types
+blog-types           少量纯 Java 共享基础类型
 ```
 
 domain 不依赖 Spring、MyBatis、Redis、HTTP SDK 或 Reactor；业务数据操作经仓储契约，由 infrastructure 实现。application 不反向依赖 infrastructure 或 HTTP DTO，Controller 不暴露 ORM 实体。只读管理统计不强造聚合。
 
-实际代码范围与未完成事项见 [架构实施记录](docs/architecture-refactor-2026-10-03.md)。并发版本控制、完整跨上下文投影与 AI 耐久索引任务仍是待办，不因目录迁移而视为完成。
+domain 按业务组织，asset 再分 image/metadata/upload/inventory。infrastructure 先按技术/数据职责再分业务，例如 `mybatis/mapper/music`、`mybatis/record/music`、`mybatis/converter/music`、`adapter/repository/music`；装配只在 `app/config`。
+
+当前架构与证据见 [ARCH-B 实施记录](docs/backend-layering-implementation-2026-10-16.md)；重复的旧四层蓝图与旧架构记录已移除，不再作为开发入口。媒体删除、真实上传验收、首页热门标签与 AI 耐久任务仍是独立待办，不因架构迁移或文档清理而视为完成。
 
 ## 本地开发
 
@@ -58,7 +59,9 @@ domain 不依赖 Spring、MyBatis、Redis、HTTP SDK 或 Reactor；业务数据�
 在根目录构建后端：
 
 ```powershell
-mvn -B -ntp clean test
+mvn -B -ntp -f blog-server/pom.xml clean test package
+# 本机安全入口；真实媒体仓储测试仅使用 blog_media_test
+pwsh -NoProfile -File blog-server/tools/architecture/test-backend.ps1 -WithMediaPostgres -Package
 ```
 
 不要在正在运行的后端读取 `target/classes` 时并行 clean 或重编译。配置通过环境变量注入；不把密码、JWT 密钥、图床 Token、网易云私钥写入文档、源码或前端产物。
@@ -66,20 +69,19 @@ mvn -B -ntp clean test
 本机已有环境的启动入口：
 
 ```powershell
-# 首次使用：复制 local.env.example 为 local.env，并填写本地敏感配置
-# local.env 已被 Git 忽略，不会提交
-./tools/start-local-backend.ps1
+# 在根目录 local.env 配置数据库、JWT 等；该文件被忽略，不提交
+./blog-server/tools/start-local-backend.ps1
 ```
 
 该脚本加载根目录 `local.env` 和兼容的 `.env.imgbed.local`，并强制关闭 AI。数据库密码、JWT、图床 Token、发布 Token 等不再写入 `application-dev.yml`。其他环境先配置数据库、Redis、JWT 等，再启动：
 
 ```powershell
 cd blog-server
-mvn compile
-mvn exec:java "-Dexec.mainClass=com.blogsystem.BlogServerApplication" "-Dexec.args=--spring.profiles.active=dev"
+mvn -B -ntp package -DskipTests
+java -Dfile.encoding=UTF-8 -jar blog-app/target/blog-app.jar --spring.profiles.active=dev --ai.enabled=false --media.catalog.uploads.enabled=false
 ```
 
-不要使用 `mvn spring-boot:run`，当前中文路径存在兼容问题。业务 API 默认为 `http://localhost:8080`，Knife4j 为 `http://localhost:8080/doc.html`。
+不要使用 `mvn spring-boot:run`，当前中文路径存在兼容问题。聚合父 POM 不是可执行服务；唯一运行制品为 `blog-server/blog-app/target/blog-app.jar`，主类仍为 `com.blogsystem.BlogServerApplication`。业务 API 默认为 `http://localhost:8080`，Knife4j 为 `http://localhost:8080/doc.html`。
 
 公开端：
 
@@ -129,16 +131,20 @@ npm run build
 
 Jenkins 当前执行数据库迁移工具测试、后端测试/打包、音乐运行时契约测试、两个前端测试/构建，再构建三个生产 Docker 镜像：`blog-system-server / blog-system-web / blog-system-admin`。是否推送由 `PUSH_IMAGES` 控制，默认分支额外推送 `latest`。
 
+构建前检查六模块测试源码供给，构建后核对全部报告及五个内嵌层 JAR。当前 Java 测试和 docs 被仓库 ignore：本地有文件不等于干净检出能得到它们；CI 缺少测试时明确失败，不绕过 ignore 或放宽零测试门槛。真实媒体测试须显式注入 `MEDIA_PG_TEST_*` 指向 `blog_media_test`，不使用业务库代替；当前交付缺口与既有回归失败见实施记录。
+
 需配置 Registry 地址、命名空间及 Jenkins 凭据。若构建需要数据库最新文章，显式启用 `SYNC_BLOG_CONTENT` 并设置 `BLOG_PUBLIC_API_URL` 与 `BLOG_SITE_URL`；默认不自动同步，干净工作区可能没有导出的文章。
 
 Compose 使用已有外部 PostgreSQL，不创建或初始化数据库。普通启动不包含可选 `ai` profile；构建 AI 镜像不代表启用 AI。Nginx 反代业务 API 与发布进程的静态博客，图片/音频仍由浏览器直接读取图床。生产增加共享 PUBLICATION_API_TOKEN（至少 32 字符）和发布持久卷，不公开内部端口。部署配置与风险见 [技术开发基线](docs/technical-development-baseline.md)。
+
+架构脚本夹具还要求 Jenkins 构建节点提供 PowerShell 7（`pwsh`）；Toolchain 阶段已前置检查。Windows/Linux 均需此工具，不会在流水线中隐式安装。制品检查使用可清理的系统临时目录，不依赖本地 `.artifacts` 已存在。
 
 ## 专项文档
 
 - [PostgreSQL 迁移、备份与回退](docs/postgresql-migration.md)
 - [Cloudflare 图片模块](docs/cloudflare-image-storage.md)
-- [音乐托管歌单](docs/music-hosted-web-2026-10-03.md)、[连续播放](docs/music-continuity-2026-10-03.md)、[圆盘控制](docs/music-disc-controls-2026-10-03.md)
+- [公开端音乐：音源、连续播放与圆盘](blog-web/docs/music-playback.md)、[后端个人资料接入](blog-server/docs/music-provider.md)
 - [音乐目录管理](docs/music-catalog-management.md)：管理端自定义歌曲资料及音频/封面/歌词资源
-- [主题组件与配色](docs/theme-card-restoration-2026-10-03.md)、[前端资源](docs/frontend-assets-guide.md)
+- [主题组件与配色](blog-web/docs/appearance.md)、[前端资源](blog-web/docs/assets.md)
 - [AI 模块与未完成边界](docs/ai-chat-module.md)、[AI 开关](docs/ai-disabled-validation.md)
 - [后续待办](docs/backlog.md)、[文档整理与恢复](docs/document-maintenance.md)

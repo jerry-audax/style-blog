@@ -1,6 +1,18 @@
 #!/bin/sh
 set -eu
 
+case "${PUBLICATION_MEDIA_ENABLED:-false}" in
+  true)
+    exec node /app/publication/interfaces/container.cjs
+    ;;
+  false)
+    ;;
+  *)
+    echo 'Invalid publication protection setting' >&2
+    exit 1
+    ;;
+esac
+
 envsubst "${NGINX_ENVSUBST_VARS:-\$BACKEND_URL \$PUBLICATION_URL \$NGINX_LISTEN_PORT}" \
   < /etc/nginx/templates/default.conf.template \
   > /etc/nginx/http.d/default.conf

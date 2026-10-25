@@ -14,7 +14,7 @@
           <el-skeleton v-if="loading" :rows="5" animated/>
           <div v-else-if="stats.recentArticles.length" class="recent-list">
             <router-link v-for="article in stats.recentArticles" :key="article.id" :to="`/article/${article.id}/edit`" class="recent-item">
-              <img v-if="article.coverUrl" :src="article.coverUrl" alt="" class="recent-cover"/><div v-else class="recent-cover cover-placeholder"><el-icon><Document/></el-icon></div>
+              <img v-if="article.coverUrl" :src="article.coverUrl" alt="" class="recent-cover" loading="lazy" decoding="async"/><div v-else class="recent-cover cover-placeholder"><el-icon><Document/></el-icon></div>
               <div class="recent-copy"><strong class="recent-title">{{ article.title }}</strong><span class="recent-meta">{{ article.categoryName || '未分类' }} · {{ article.viewCount || 0 }} 阅读</span></div>
               <span class="recent-status" :class="article.status === 1 ? 'pub' : 'draft'">{{ article.status === 1 ? '已发布' : '草稿' }}</span>
             </router-link>

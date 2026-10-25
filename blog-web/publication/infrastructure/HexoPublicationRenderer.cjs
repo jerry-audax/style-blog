@@ -1,8 +1,20 @@
 'use strict'
 const fs = require('node:fs/promises')
 const path = require('node:path')
-const {randomUUID} = require('node:crypto')
 const {spawn} = require('node:child_process')
+const {randomUUID} = require('node:crypto')
+const {FrozenPublicationInputs} = require('./FrozenPublicationInputs.cjs')
+const {validateStage} = require('../domain/PublicationAttempt.cjs')
+const {publicationOutputDigest} = require('./PublicationManifestCollector.cjs')
+const {captureRemoval, resumeRemoval} = require('./FilePublicationRetirement.cjs')
+const {assembleUnified} = require('./UnifiedPublicationAssembler.cjs')
+
+async function realDirectory(directory) {
+    const info = await fs.lstat(directory)
+    const real = await fs.realpath(directory)
+    const matches = process.platform === 'win32' ? real.toLowerCase() === directory.toLowerCase() : real === directory
+    if (!info.isDirectory() || info.isSymbolicLink() || !matches) throw new Error('Unsafe publication directory')
+}
 
 async function copyTree(source, target) {
     const info = await fs.lstat(source)
@@ -25,63 +37,135 @@ async function validateTree(directory) {
 }
 
 class HexoPublicationRenderer {
-    constructor({root, directory, dev = false, timeoutMs = 120000}) {
+    #children = new Set()
+    constructor({root, directory, dev = false, timeoutMs = 120000, inputs, copy = copyTree, layoutVersion = 1}) {
+        if (![1, 2].includes(layoutVersion)) throw new Error('Invalid publication layout')
+        this.layoutVersion = layoutVersion
         this.root = path.resolve(root); this.directory = path.resolve(directory); this.dev = dev; this.timeoutMs = timeoutMs
+        this.inputs = inputs || new FrozenPublicationInputs({root: this.root, directory: this.directory, dev})
+        this.copy = copy
+        this.stopped = false
     }
     async render(posts) {
-        const release = `release-${randomUUID()}`
-        const work = path.join(this.directory, `work-${randomUUID()}`)
-        await fs.mkdir(work, {recursive: true})
+        const snapshot = await this.inputs.freeze(posts)
         try {
-            for (const name of ['_config.yml', '_config.anzhiyu.yml', 'source', 'scripts', 'licenses',
-                'tools/content.cjs', 'tools/site-integration.cjs', 'tools/vendor-assets.cjs'])
-                await copyTree(path.join(this.root, name), path.join(work, name))
-            const config = JSON.parse(await fs.readFile(path.join(this.root, 'package.json'), 'utf8'))
-            delete config.workspaces
-            await fs.writeFile(path.join(work, 'package.json'), JSON.stringify(config))
-            await fs.symlink(path.join(this.root, 'node_modules'), path.join(work, 'node_modules'), 'junction')
-            if (!this.dev) await copyTree(path.join(this.root, '.build/app/.vite/manifest.json'), path.join(work, '.build/app/.vite/manifest.json'))
-            const postDirectory = path.join(work, 'source/_posts')
-            await fs.mkdir(postDirectory, {recursive: true})
-            // Remove only owned database exports in this temporary copy. Never
-            // modify the repository's posts or delete handwritten source files.
-            for (const name of await fs.readdir(postDirectory)) {
-                if (!/^database-article-[1-9]\d{0,18}\.md$/.test(name)) continue
-                const filename = path.join(postDirectory, name)
-                if (!/^blog_export_owned: true$/m.test(await fs.readFile(filename, 'utf8')))
-                    throw new Error('Cannot replace a handwritten post')
-                await fs.unlink(filename)
-            }
-            for (const post of posts) {
-                if (!/^database-article-[1-9]\d{0,18}\.md$/.test(post.name)) throw new Error('Invalid export name')
-                await fs.writeFile(path.join(postDirectory, post.name), post.text, {flag: 'wx'})
-            }
-            await new Promise((resolve, reject) => {
-                const cli = path.join(path.dirname(require.resolve('hexo-cli/package.json')), 'bin/hexo')
-                const child = spawn(process.execPath, [cli, 'generate'], {cwd: work,
-                    env: {...process.env, BLOG_DEV: this.dev ? '1' : '0'}, windowsHide: true, stdio: 'ignore'})
-                const timer = setTimeout(() => {child.kill(); reject(new Error('Publication build timed out'))}, this.timeoutMs)
-                child.on('error', error => {clearTimeout(timer); reject(error)})
-                child.on('exit', code => {clearTimeout(timer); code === 0 ? resolve() : reject(new Error('Publication build failed'))})
-            })
-            const tree = path.join(work, '.build/blog')
-            await fs.access(path.join(tree, 'index.html'))
-            await validateTree(tree)
-            for (const post of posts) {
-                const id = post.name.match(/^database-article-(\d+)\.md$/)[1]
-                await fs.access(path.join(tree, 'article', id, 'index.html'))
-            }
-            await fs.mkdir(path.join(this.directory, 'releases'), {recursive: true})
-            // The release is not visible until the repository commits its
-            // pointer. Copying avoids Windows directory-rename sharing locks.
-            await copyTree(tree, path.join(this.directory, 'releases', release))
-            return release
-        } finally {
-            if (path.dirname(work) !== this.directory || !/^work-[a-f0-9-]+$/.test(path.basename(work)))
-                throw new Error('Invalid temporary publication path')
-            try {await fs.unlink(path.join(work, 'node_modules'))} catch (error) {if (error.code !== 'ENOENT') throw error}
-            await fs.rm(work, {recursive: true, force: true})
+            return await this.renderFrozen(snapshot)
+        } finally {await this.inputs.dispose(snapshot)}
+    }
+    async renderFrozen(snapshot, {onStageReady = async () => {}} = {}) {
+        if (this.stopped) throw new Error('Publication renderer stopped')
+        await this.inputs.verify(snapshot)
+        const work = snapshot.workRoot, release = snapshot.releaseId
+        await realDirectory(this.directory)
+        const releases = path.join(this.directory, 'releases')
+        await fs.mkdir(releases, {recursive: true}); await realDirectory(releases)
+        await this.inputs.beginBuild(snapshot)
+        await new Promise((resolve, reject) => {
+            if (this.stopped) {reject(new Error('Publication renderer stopped')); return}
+            const runner = path.join(__dirname, 'run-frozen-hexo.cjs')
+            const child = spawn(process.execPath, [runner], {cwd: work,
+                env: {...process.env, BLOG_DEV: this.dev ? '1' : '0'}, windowsHide: true, stdio: 'ignore'})
+            let timedOut = false
+            this.#children.add(child)
+            const timer = setTimeout(() => {timedOut = true; child.kill()}, this.timeoutMs)
+            child.on('error', error => {this.#children.delete(child); clearTimeout(timer); reject(error)})
+            child.on('close', code => {this.#children.delete(child); clearTimeout(timer); !timedOut && code === 0 ? resolve() : reject(new Error('Publication build failed or timed out'))})
+        })
+        await this.inputs.completeBuild(snapshot)
+        const tree = path.join(work, '.build/blog')
+        await fs.access(path.join(tree, 'index.html'))
+        let expectedOutputDigest = this.layoutVersion === 1 ? await publicationOutputDigest(tree) : null
+        await validateTree(tree)
+        for (const name of snapshot.postNames) {
+            const id = name.match(/^database-article-(\d+)\.md$/)[1]
+            await fs.access(path.join(tree, 'article', id, 'index.html'))
         }
+        await realDirectory(this.directory); await realDirectory(releases)
+        const stages = path.join(this.directory, 'stages')
+        await fs.mkdir(stages, {recursive: true}); await realDirectory(stages)
+        const stageName = 'stage-' + randomUUID(), stage = path.join(stages, stageName)
+        await fs.mkdir(stage)
+        const stamp = await fs.lstat(stage, {bigint: true})
+        let checkpointStarted = false
+        try {
+            if (this.layoutVersion === 2) expectedOutputDigest = await assembleUnified(snapshot, tree, stage, {copy: this.copy})
+            else await this.copy(tree, stage)
+            await validateTree(stage)
+            const outputDigest = await publicationOutputDigest(stage)
+            if (outputDigest !== expectedOutputDigest) throw new Error('Incomplete publication output copy')
+            const output = validateStage({releaseId: release, stageName, outputDigest, ...(this.layoutVersion === 2 ? {layoutVersion: 2} : {}),
+                device: String(stamp.dev), inode: String(stamp.ino)})
+            // 回调一旦开始，落盘结果可能未知；保留已完成 stage，重启按日志核对，不猜测删除。
+            checkpointStarted = true
+            await onStageReady(output)
+            await this.#verifyArtifact(stage, output)
+            await this.recoverStage(output)
+            return release
+        } catch (error) {
+            if (!checkpointStarted) {
+                await realDirectory(stages)
+                await realDirectory(stage)
+                const current = await fs.lstat(stage, {bigint: true})
+                await publicationOutputDigest(stage)
+                if (current.dev === stamp.dev && current.ino === stamp.ino
+                        && path.dirname(stage) === stages && path.resolve(stage) === stage) await fs.rm(stage, {recursive: true, force: false})
+            }
+            throw error
+        }
+    }
+    async #roots() {
+        await realDirectory(this.directory)
+        const releases = path.join(this.directory, 'releases'), stages = path.join(this.directory, 'stages')
+        await realDirectory(releases); await realDirectory(stages)
+        return {releases, stages}
+    }
+    async #exists(filename) {
+        try {await fs.lstat(filename); return true} catch (error) {if (error.code === 'ENOENT') return false; throw error}
+    }
+    async #verifyArtifact(filename, output) {
+        await realDirectory(filename)
+        const info = await fs.lstat(filename, {bigint: true})
+        if (String(info.dev) !== output.device || String(info.ino) !== output.inode
+                || await publicationOutputDigest(filename) !== output.outputDigest) throw new Error('Publication output identity changed')
+        await realDirectory(filename)
+        const after = await fs.lstat(filename, {bigint: true})
+        if (info.dev !== after.dev || info.ino !== after.ino) throw new Error('Publication output identity changed')
+    }
+    async recoverStage(input) {
+        const output = validateStage(input), {releases, stages} = await this.#roots()
+        const stage = path.join(stages, output.stageName), target = path.join(releases, output.releaseId)
+        const hasStage = await this.#exists(stage), hasTarget = await this.#exists(target)
+        if (hasStage && hasTarget || !hasStage && !hasTarget) throw new Error('Ambiguous publication output ownership')
+        if (hasTarget) {await this.#verifyArtifact(target, output); return output.releaseId}
+        await this.#verifyArtifact(stage, output)
+        // 单写者协议；在 rename 前再次拒绝既存目标，绝不以同名覆盖或认领目录。
+        if (await this.#exists(target)) throw new Error('Publication release already exists')
+        await fs.rename(stage, target)
+        await this.#verifyArtifact(target, output)
+        return output.releaseId
+    }
+    async verifyOutput(input) {
+        const output = validateStage(input), {releases} = await this.#roots()
+        await this.#verifyArtifact(path.join(releases, output.releaseId), output)
+    }
+    async outputExists(input) {
+        const output = validateStage(input), {releases} = await this.#roots()
+        return this.#exists(path.join(releases, output.releaseId))
+    }
+    stop() {this.stopped = true; for (const child of this.#children) child.kill()}
+    async prepareRemoval(input) {
+        const output = validateStage(input), {releases} = await this.#roots()
+        const target = path.join(releases, output.releaseId)
+        await this.#verifyArtifact(target, output)
+        const intent = await captureRemoval(target, output)
+        await this.#verifyArtifact(target, output)
+        return intent
+    }
+    async removeOutput(input, intent) {
+        const output = validateStage(input), {releases} = await this.#roots()
+        const target = path.join(releases, output.releaseId)
+        if (path.dirname(target) !== releases || path.resolve(target) !== target) throw new Error('Unsafe publication retirement')
+        await resumeRemoval(target, output, intent)
     }
 }
 module.exports = {HexoPublicationRenderer, validateTree}

@@ -23,11 +23,16 @@ test('a real Hexo build injects the production Vue entry into a database-ID arti
             '_config.anzhiyu.yml',
             'scripts/site-loader.js',
             'tools/content.cjs',
+            'tools/article-summary.cjs',
+            'tools/media-loading.cjs',
             'tools/site-integration.cjs',
             'tools/vendor-assets.cjs',
+            'tools/lightbox-selection.cjs',
             'source/music/index.md',
+            'source/tags/index.md',
             'source/about/index.md',
             'source/js/site-music.js',
+            'source/js/site-media-loading.js',
             'source/js/site-bridge.js',
             'source/js/site-click-effect.js',
             'source/css/site.css',
@@ -63,6 +68,12 @@ test('a real Hexo build injects the production Vue entry into a database-ID arti
         })
         fs.mkdirSync(path.join(sandbox, 'source/_posts'), {recursive: true})
         fs.writeFileSync(path.join(sandbox, 'source/_posts', post.name), post.text)
+        for (const [id, summary] of [[20, '明确摘要A'], [21, '<p>&nbsp;<br></p>']]) {
+            const extra = toPost({id, status: 1, title: `摘要测试${id}`, summary,
+                publishTime: '2026-09-02T12:00:00', contentHtml: `<p>BODY_ONLY_${id}</p>`,
+                categoryName: '系统设计', tagNames: ['DDD']})
+            fs.writeFileSync(path.join(sandbox, 'source/_posts', extra.name), extra.text)
+        }
         const siteTheme = loadYaml(fs.readFileSync(path.join(sandbox, '_config.anzhiyu.yml'), 'utf8'))
         await hexo.init()
         assert.equal(hexo.extend.filter.list('before_generate').filter(fn => String(fn).includes('reward.QR_code')).length, 1,
@@ -74,6 +85,16 @@ test('a real Hexo build injects the production Vue entry into a database-ID arti
         assert.deepEqual(Object.keys(hexo.theme.config.menu), Object.keys(siteTheme.menu))
         assert.deepEqual(Object.keys(hexo.theme.config.menu.主页), ['归档', '分类', '标签'])
         const home = fs.readFileSync(path.join(sandbox, '.build/blog/index.html'), 'utf8')
+        assert.doesNotMatch(home, /BODY_ONLY_20|BODY_ONLY_21|HTML 正文/,
+            'neither cards nor carousel may excerpt the body')
+        assert.equal((home.match(/class="content"/g) || []).length, 1,
+            'only the explicitly supplied visible summary has a card element')
+        assert.equal((home.match(/class="blog-slider__text"/g) || []).length, 1)
+        assert.match(home, /明确摘要A/)
+        for (const id of [20, 21]) {
+            const detail = fs.readFileSync(path.join(sandbox, `.build/blog/article/${id}/index.html`), 'utf8')
+            assert.match(detail, new RegExp(`BODY_ONLY_${id}`))
+        }
         assert.equal(hexo.theme.config.display_mode, 'dark')
         assert.equal(hexo.theme.config.darkmode.autoChangeMode, false)
         assert.equal(hexo.theme.config.theme_color.main, '#4F46E5')
@@ -120,6 +141,11 @@ test('a real Hexo build injects the production Vue entry into a database-ID arti
         for (const id of ['home_top', 'random-banner', 'swiper_container', 'bannerGroup', 'topPostGroup'])
             assert.match(home, new RegExp(`id="${id}"`))
         assert.equal((home.match(/class="categoryButton /g) || []).length, 3)
+        assert.match(home, /class="categoryGroup" data-blog-home-tags/)
+        for (const name of ['文章', '分类', '标签']) assert.match(home, new RegExp(`class="categoryButtonText">${name}</span>`))
+        const tagsIndex = fs.readFileSync(path.join(sandbox, '.build/blog/tags/index.html'), 'utf8')
+        assert.match(tagsIndex, /class="tag-cloud-list is-center" data-blog-tag-articles/)
+        assert.match(tagsIndex, /id="tag-page-tags"/)
         assert.match(home, /class="blog-slider__title"[^>]*>隔离构建测试</)
         assert.match(home, /class="card-widget card-info"/)
         assert.match(home, /class="card-webinfo"/)
@@ -203,7 +229,7 @@ test('a real Hexo build injects the production Vue entry into a database-ID arti
             window,
         })
         window.toRandomPost()
-        assert.equal(randomTarget, '/blog/article/19/')
+        assert.ok(['/blog/article/19/', '/blog/article/20/', '/blog/article/21/'].includes(randomTarget))
         assert.ok(
             fs.existsSync(
                 path.join(sandbox, '.build/blog/pluginsSrc/anzhiyu-theme-static/icon/ali_iconfont_css.css'),

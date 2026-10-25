@@ -49,7 +49,7 @@
         </button>
         <button class="tb-library" :disabled="uploading || saving || loading" @click="openImagePicker('article')">图片库</button>
         <input ref="articleImageInput" type="file" accept="image/jpeg,image/png,image/gif,image/webp" hidden
-               @change="selectArticleImage"/>
+               multiple @change="selectArticleImage"/>
         <span v-if="uploading" role="status">图片上传中…</span>
       </div>
       <div class="editor-body" @click="onEditorClick">
@@ -59,6 +59,7 @@
 
 
         <p class="editor-footer">支持富文本、代码、图片拖拽与粘贴。正文保存为 HTML，公开端构建时净化。</p>
+        <MediaUploadPanel :uploader="bodyImages.uploader"/>
       </div>
       <aside class="authoring-sidebar" aria-label="文章发布与卡片设置">
         <fieldset class="form-section"><legend>发布设置</legend>
@@ -106,6 +107,7 @@
           <div class="cover-actions"><el-button :disabled="uploading || saving" @click="openImagePicker('cover')">从图片库选择</el-button><el-button :disabled="uploading || saving" @click="coverImageInput.click()">上传封面</el-button></div>
           <input ref="coverImageInput" type="file" accept="image/jpeg,image/png,image/gif,image/webp" hidden @change="selectCoverImage"/>
           <p class="page-sub">Telegram 图床 · 最大 10 MiB。取消或替换图片不自动删除文件。</p>
+          <MediaUploadPanel :uploader="coverImages.uploader"/>
         </fieldset>
         <section class="article-card-preview" aria-label="文章卡片预览">
           <p class="preview-label">首页卡片预览 · 非部署结果</p>
@@ -114,7 +116,7 @@
         </section>
       </aside>
     </div>
-    <ImagePicker v-model="imagePickerOpen" :purpose="pickerPurpose" @select="useLibraryImage"/>
+    <ImagePicker :key="articleId || 'new'" v-model="imagePickerOpen" :purpose="pickerPurpose" @select="useLibraryImage"/>
     <el-dialog v-model="imageDialog" title="编辑图片" width="440px">
       <div class="dialog-field">
         <label>图片地址</label>
@@ -154,7 +156,7 @@
   </section>
 </template>
 <script setup>
-import {h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch} from 'vue'
+import {computed,h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {ElMessage} from 'element-plus'
 import {useEditor, EditorContent, NodeViewWrapper, VueNodeViewRenderer} from '@tiptap/vue-3'
@@ -162,38 +164,47 @@ import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import Placeholder from '@tiptap/extension-placeholder'
 import Link from '@tiptap/extension-link'
-import {getArticle, listCategories, listTags, saveArticle, uploadImage} from '../api'
-import {validateImageUpload} from '../utils/images'
+import {getArticle, listCategories, listTags, saveArticle} from '../api'
+import {useAdminAuthStore} from '../stores/auth'
+import {useImageUpload} from '../composables/useImageUpload'
+import MediaUploadPanel from '../components/MediaUploadPanel.vue'
 import ImagePicker from '../components/ImagePicker.vue'
 
 const route = useRoute()
 const router = useRouter()
+const auth=useAdminAuthStore()
 const saving = ref(false)
 const loading = ref(true), loadError = ref('')
 const imagePickerOpen = ref(false), pickerPurpose = ref('article')
-const openImagePicker = purpose => {pickerPurpose.value = purpose; imagePickerOpen.value = true}
+const openImagePicker = purpose => {bodyImages.invalidate();coverImages.invalidate();pickerPurpose.value = purpose; imagePickerOpen.value = true}
 const useLibraryImage = image => {
   if (disposed || loading.value || loadError.value || saving.value || uploading.value) return
+  bodyImages.invalidate();coverImages.invalidate()
   if (pickerPurpose.value === 'cover') form.coverUrl = image.url
   else editor.value?.chain().focus().setImage({src: image.url}).run()
 }
 const categories = ref([])
 const tags = ref([])
+const normalizeTagId = value => {
+  if (typeof value === 'number' && Number.isSafeInteger(value)) value = String(value)
+  if (typeof value !== 'string' || !/^[1-9][0-9]{0,18}$/.test(value) || BigInt(value) > 9223372036854775807n)
+    throw new Error('标签ID无效，请重新加载文章和标签')
+  return value
+}
 const uploading = ref(false)
 const articleImageInput = ref(null)
 const coverImageInput = ref(null)
-let disposed = false
+let disposed = false, loadGeneration=0, applyingCover=false
 
 const uploadSelectedImages = async (files, purpose = 'article') => {
   if (uploading.value || saving.value || loading.value || loadError.value) return
   uploading.value = true
   try {
     for (const file of Array.from(files).slice(0, 10)) {
-      validateImageUpload(file, purpose)
-      const image = await uploadImage(file, purpose)
+      const source=purpose==='cover'?coverImages:bodyImages
+      const image = await source.start(file)
       if (disposed) return
-      if (purpose === 'cover') form.coverUrl = image.url
-      else editor.value?.chain().focus().setImage({src: image.url}).run()
+      if(!image){ElMessage.warning(source.error.value || '结果未确认，请按原编号查询；已停止后续自动上传');break}
     }
   } catch (error) {
     if (!disposed) ElMessage.error(error.message)
@@ -212,13 +223,20 @@ const selectCoverImage = (event) => {
   uploadSelectedImages(files, 'cover')
 }
 
-const articleId = route.params.id ? Number(route.params.id) : null
-const isEdit = !!articleId
+const articleId = computed(()=>route.params.id ? Number(route.params.id) : null)
+const isEdit = computed(()=>!!articleId.value)
 
 const form = reactive({
   id: null, title: '', summary: '', coverUrl: '', contentMd: '',
   categoryId: null, status: 0, isTop: 0, isCommentEnabled: 1, tagIds: []
 })
+const bodyImages=useImageUpload({auth,purpose:'article',onSucceeded:image=>{
+  if(!disposed && !loading.value && !loadError.value)editor.value?.chain().focus().setImage({src:image.url}).run()
+}})
+const coverImages=useImageUpload({auth,purpose:'cover',onSucceeded:image=>{
+  if(!disposed && !loading.value && !loadError.value){applyingCover=true;try{form.coverUrl=image.url}finally{applyingCover=false}}
+}})
+watch(()=>form.coverUrl,()=>{if(!applyingCover)coverImages.invalidate()},{flush:'sync'})
 
 // ---- Resizable image node view with preview ----
 const previewSrc = ref('')
@@ -407,30 +425,36 @@ const submit = async () => {
 
 const loadEditor = async () => {
   if (disposed) return
+  const epoch=++loadGeneration,id=articleId.value
+  bodyImages.invalidate();coverImages.invalidate();imagePickerOpen.value=false
   loading.value = true; loadError.value = ''
   try {
-    const [cats, tgs, article] = await Promise.all([listCategories(), listTags(), articleId ? getArticle(articleId) : Promise.resolve(null)])
-    if (disposed) return
-    categories.value = cats; tags.value = tgs
+    const [cats, tgs, article] = await Promise.all([listCategories(), listTags(), id ? getArticle(id) : Promise.resolve(null)])
+    if (disposed || epoch!==loadGeneration) return
+    categories.value = cats; tags.value = tgs.map(tag => ({...tag, id: normalizeTagId(tag.id)}))
     if (article) Object.assign(form, {
       id: article.id, title: article.title, summary: article.summary || '',
       coverUrl: article.coverUrl || '', contentMd: article.contentHtml || article.contentMd || '',
       categoryId: article.categoryId, status: article.status,
       isTop: article.isTop ?? 0, isCommentEnabled: article.isCommentEnabled ?? 1,
-      tagIds: article.tagIds || [],
+      tagIds: [...new Set((article.tagIds || []).map(normalizeTagId))],
     })
+    else Object.assign(form,{id:null,title:'',summary:'',coverUrl:'',contentMd:'',categoryId:null,status:0,isTop:0,isCommentEnabled:1,tagIds:[]})
     await nextTick()
-    if (!disposed && editor.value) editor.value.commands.setContent(form.contentMd || '')
+    if (!disposed && epoch===loadGeneration && editor.value) editor.value.commands.setContent(form.contentMd || '')
   } catch (error) {
-    if (!disposed) loadError.value = error?.message || '文章与分类标签加载失败，请重新加载后再编辑'
+    if (!disposed && epoch===loadGeneration) loadError.value = error?.message || '文章与分类标签加载失败，请重新加载后再编辑'
   } finally {
-    if (!disposed) loading.value = false
+    if (!disposed && epoch===loadGeneration) loading.value = false
   }
 }
 onMounted(loadEditor)
+watch(()=>route.params.id,()=>{void loadEditor()})
+watch(()=>[auth.verifiedUserId,auth.token],()=>{bodyImages.invalidate();coverImages.invalidate();imagePickerOpen.value=false},{flush:'sync'})
 
 onBeforeUnmount(() => {
   disposed = true
+  loadGeneration++
   editor.value?.destroy()
 })
 </script>

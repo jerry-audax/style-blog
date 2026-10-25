@@ -1,11 +1,21 @@
 FROM maven:3.9-eclipse-temurin-17 AS builder
 WORKDIR /build
 COPY pom.xml .
-RUN mvn dependency:go-offline -q
-COPY src/ src/
+COPY blog-types/pom.xml blog-types/pom.xml
+COPY blog-domain/pom.xml blog-domain/pom.xml
+COPY blog-application/pom.xml blog-application/pom.xml
+COPY blog-infrastructure/pom.xml blog-infrastructure/pom.xml
+COPY blog-trigger/pom.xml blog-trigger/pom.xml
+COPY blog-app/pom.xml blog-app/pom.xml
+COPY blog-types/ blog-types/
+COPY blog-domain/ blog-domain/
+COPY blog-application/ blog-application/
+COPY blog-infrastructure/ blog-infrastructure/
+COPY blog-trigger/ blog-trigger/
+COPY blog-app/ blog-app/
 RUN mvn package -DskipTests -q
 
-FROM node:22-alpine AS music-builder
+FROM node:22.23.3-alpine3.23 AS music-builder
 WORKDIR /music-runtime
 COPY music-runtime/package*.json ./
 RUN npm ci --ignore-scripts --no-audit --no-fund
@@ -17,7 +27,7 @@ RUN apk add --no-cache libstdc++
 WORKDIR /app
 COPY --from=music-builder /usr/local/bin/node /usr/local/bin/node
 COPY --from=music-builder /music-runtime /app/music-runtime
-COPY --from=builder /build/target/*.jar app.jar
+COPY --from=builder /build/blog-app/target/blog-app.jar app.jar
 ENV MUSIC_STATE_DIRECTORY=/var/lib/blog-music
 ENV MUSIC_RUNTIME_DIRECTORY=/app/music-runtime
 ENTRYPOINT ["java", "-jar", "app.jar"]

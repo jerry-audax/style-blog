@@ -1,0 +1,83 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6380}
+      database: ${REDIS_DATABASE:0}
+  sql:
+    init:
+      mode: never
+  ai:
+    dashscope:
+      api-key: ${DASHSCOPE_API_KEY:}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+media:
+  catalog:
+    storage: ${MEDIA_CATALOG_STORAGE:postgres}
+    uploads:
+      enabled: ${MEDIA_CATALOG_UPLOADS_ENABLED:false}
+    deletions:
+      enabled: ${MEDIA_CATALOG_DELETIONS_ENABLED:false}
+      environment-id: ${MEDIA_CATALOG_DELETIONS_ENVIRONMENT_ID:production}
+      physical-delete:
+        enabled: false
+    publication-pins:
+      enabled: false
+
+imgbed:
+  base-url: ${IMGBED_BASE_URL:https://cloudflare-imgbed-6of.pages.dev}
+  api-token: ${IMGBED_API_TOKEN:}
+  upload-channel: ${IMGBED_UPLOAD_CHANNEL:telegram}
+  channel-name: ${IMGBED_CHANNEL_NAME:TelegramBot}
+  root-folder: ${IMGBED_ROOT_FOLDER:blog}
+
+ai:
+  enabled: ${AI_ENABLED:false}
+  knowledge:
+    initialize-on-startup: ${AI_INITIALIZE_ON_STARTUP:false}
+
+blog:
+  owner:
+    phone: ${BLOG_OWNER_PHONE}
+
+publication:
+  base-url: ${PUBLICATION_BASE_URL:http://blog-web:8081}
+  api-token: ${PUBLICATION_API_TOKEN}
+  token-file: ${PUBLICATION_TOKEN_FILE:}
+
+music:
+  node: ${MUSIC_NODE:node}
+  runtime-directory: ${MUSIC_RUNTIME_DIRECTORY:/app/music-runtime}
+  state-directory: ${MUSIC_STATE_DIRECTORY:/var/lib/blog-music}
+  playlist-id: ${MUSIC_PLAYLIST_ID:939817038}
+
+surprise:
+  state-directory: ${SURPRISE_STATE_DIRECTORY:/var/lib/blog-music}
+
+sa-token:
+  token-name: Authorization
+  is-read-cookie: false
+  is-read-body: false
+  timeout: 86400
+  active-timeout: -1
+  is-concurrent: true
+  is-share: false
+  is-log: false
+  jwt-secret-key: ${JWT_SECRET}

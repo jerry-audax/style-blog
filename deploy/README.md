@@ -11,7 +11,7 @@ The production stack builds three application images: the Spring Boot API, the p
 3. If `blog_system` is a new empty database, apply the structure once with a PostgreSQL client:
 
    ```bash
-   psql "$DB_URL" -v ON_ERROR_STOP=1 -f blog-server/src/main/resources/db/schema-postgresql.sql
+   psql "$DB_URL" -v ON_ERROR_STOP=1 -f migration/001_schema_postgresql.sql
    ```
 
    The application has `spring.sql.init.mode=never`; it does not run this script during startup.

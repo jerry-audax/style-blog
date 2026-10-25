@@ -45,10 +45,7 @@ test('pagination exports public content without identity or detail read side eff
     const result = await fetchPublished('http://127.0.0.1:8080', async (url, options) => {
         requests.push({url: String(url), options})
         const current = requests.length
-        return {
-            ok: true,
-            json: async () => ({code: 0, data: {total: 2, records: [{...article, id: current}]}}),
-        }
+        return new Response(JSON.stringify({code: 0, data: {total: 2, records: [{...article, id: current}]}}))
     })
     assert.equal(result.length, 2)
     assert.match(requests[1].url, /pageNum=2/)
@@ -59,17 +56,11 @@ test('pagination exports public content without identity or detail read side eff
 test('partial or duplicate exports fail without returning a replacement snapshot', async () => {
     let page = 0
     await assert.rejects(
-        fetchPublished('http://localhost', async () => ({
-            ok: true,
-            json: async () => ({code: 0, data: {total: 2, records: ++page === 1 ? [article] : []}}),
-        })),
+        fetchPublished('http://localhost', async () => new Response(JSON.stringify({code: 0, data: {total: 2, records: ++page === 1 ? [article] : []}}))),
         /分页不完整/,
     )
     await assert.rejects(
-        fetchPublished('http://localhost', async () => ({
-            ok: true,
-            json: async () => ({code: 0, data: {total: 2, records: [article]}}),
-        })),
+        fetchPublished('http://localhost', async () => new Response(JSON.stringify({code: 0, data: {total: 2, records: [article]}}))),
         /重复/,
     )
 })

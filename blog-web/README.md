@@ -1,5 +1,21 @@
 # Javerry 公开站点：Hexo + Vue
 
+## 发布资源保护基础（2026-10-24）
+
+已实现有界机器客户端和冻结构建输入，`renderFrozen`在构建前后复核同一份内容，并约束有效路径/写盘路由；客户端尚未接入运行协调器。定向32项通过；经用户另行批准仅修正日期格式后，公开端Node104、Vue48及联合构建全部通过，管理端240及构建通过。详见[调用链、配置与验收边界](docs/publication-media-protection.md)，不能据此宣称发布覆盖完整或开启物理删除。
+
+## 当前回归状态（2026-10-18）
+
+用户明确确认保留500个粒子和cameraDistance=20，本轮只修复过时的350/25测试与注释，不改页面效果；仍精确验证500组三维位置/颜色、随机属性和镜头距离调用。已先复现旧断言失败，再通过背景10/10、完整Node/Hexo79/79及Vue48/48，总127/127，联合构建成功。以下日期段落保留当时证据，旧粒子失败不再是当前状态；真实手机/GPU和完整媒体性能验收仍待完成。
+
+## 首页标签与摘要（2026-10-17）
+
+首页原三个categoryButton入口由`GET /api/content/home-tags`运行时读取，不携带管理Token/cookie。管理端普通标签CRUD以`isHot`标记热门，后台按sort升序、id降序取前三个有效热门；不足三个热门则整体回退普通有效列表前三个，总量不足返回实际数量。公开端接受0–3项，更新文字和按ID链接、隐藏多余槽位，卸载还原；异常/畸形数据保留原入口。不依赖旧configured/version，不重建Hexo。`/blog/tags/?tagId=<十进制ID>`仍为动态已发布文章列表；不带query的原标签云不变。
+
+文章卡片和首页轮播仅使用显式summary/description，无摘要、空白、NBSP或空HTML时不生成摘要节点，不截取正文补位；详情正文不变。静态摘要变化仍由既有自动发布流程生成快照。
+
+TAG-HOT-01本轮证据：Node/Hexo79/79、Vue47/48，唯一既存失败仍为粒子规格350/25与源码500/20不一致；热门/回退/短列表/空列表及真实.categoryItem包装还原回归通过，联合构建通过。Chrome真实本地迁移后的首页三入口显示Agent、科技福利、打开新世界的大门，ID链接与后端一致；管理端真实博主编辑/保存未代验。历史证据与当前修订见[设计](../docs/superpowers/specs/2026-10-17-home-tag-selection-design.md)。沿用原主题窄屏隐藏bannerGroup的响应式规则，未增加窄屏入口改版；非法tagId暂回退原标签云，没有单独错误提示。
+
 更新日期：2026-10-04。本站是个人技术博客，不是独立个人主页/作品集。Hexo 使用安知鱼原主题提供公开阅读，Vue 提供文章动态计数和只读历史评论；编辑与账号维护都在独立管理端。
 
 ## 路由与边界
@@ -17,7 +33,7 @@
 
 顶栏包含“主页（归档/分类/标签）、最新文章、我的→音乐、关于”。公开端不提供博客登录注册、个人资料编辑、发表评论/回复或点赞写入。
 
-昵称、邮箱、头像、密码统一在 `blog-admin` 的 `/account`；原公开 ProfileView/LoginView 已清理，不再以组件路径指导开发。AI 聊天、状态、SSE 工具与依赖保留但不启用。详见 [单博主认证](../docs/single-owner-authentication.md)、[文件清理记录](../docs/project-cleanup-2026-10-03.md)。
+昵称、邮箱、头像、密码统一在 `blog-admin` 的 `/account`；原公开 ProfileView/LoginView 已清理，不再以组件路径指导开发。AI 聊天、状态、SSE 工具与依赖保留但不启用。详见 [单博主认证](../docs/single-owner-authentication.md)、[文件清理记录](../docs/document-maintenance.md)。
 
 ## 源码与构建目录
 
@@ -98,7 +114,7 @@ npm run build
 
 图片由后台调用 `/api/images` 管理，浏览器直接读取图床 URL；Token 仅后端。旧 `/uploads/` 返回 404，历史文件/记录未删除。详见 [图片说明](../docs/cloudflare-image-storage.md)。
 
-网站标识为 `source/img/site-logo.jpg`，favicon 使用 `/blog/img/site-logo.jpg`；作者头像为 `source/img/avatar.jpg`，不能合并用途。资源入口见 [前端资源说明](../docs/frontend-assets-guide.md)。
+网站标识为 `source/img/site-logo.jpg`，favicon 使用 `/blog/img/site-logo.jpg`；作者头像为 `source/img/avatar.jpg`，不能合并用途。资源入口见 [前端资源说明](docs/assets.md)。
 
 主题字体、瀑布流、QR、Swiper、APlayer、Meting、Snackbar、medium-zoom 与 PJAX 随站点打包；数据/图片/封面/音频仍可能是远端资源。保留 Meting 组件不代表仍请求公共 Meting 音源。第三方评论、访客统计、赞赏二维码与 AI 摘要未启用，不使用作者示例账号或歌单。来源与许可见 [THIRD_PARTY](THIRD_PARTY.md)。
 
@@ -112,7 +128,7 @@ npm run build
 - 迷你封面圆盘只播放/暂停，转动反映播放状态；减少动画时不转动。完整列表、进度、音量仅在音乐页，其他位置完整 APlayer 隐藏并 inert。
 - 控制台 `#consoleMusic` 区分加载/播放/暂停/失败，支持键盘及取消未完成播放；不会与主题父子点击重复切换。
 - 音源失败延迟 1.5 秒有限跳过，连续 5 首或剩余均失败时停止；实际 playing 重置失败预算。暂停/销毁取消跳歌，手动重试可重新尝试，不无限请求。
-- 行为集中在 `source/js/site-music.js`，不修改 npm 主题。详见 [托管歌单](../docs/music-hosted-web-2026-10-03.md)、[连续播放](../docs/music-continuity-2026-10-03.md)、[圆盘控制](../docs/music-disc-controls-2026-10-03.md)。
+- 行为集中在 `source/js/site-music.js`，不修改 npm 主题。统一说明见[音乐播放](docs/music-playback.md)。
 
 ## 主题、透明度与效果
 
@@ -122,9 +138,9 @@ npm run build
 
 `source/css/site.css` 控制本站派生色和底板：深色底色 #1B1722，卡片黑色 alpha 0.62，正文/导航/控制台 0.8，次级底板 0.7，搜索/菜单 0.96，边框 #45414C。粒子装饰 opacity 0.55；只改背景 alpha，不降低文字、按钮、封面、头像的整体 opacity。全透明方案已取消。
 
-粒子参数唯一入口为 `app/src/config/particles.js`：350、spread 10、speed 0.1、四色 #6366F1/#10B981/#ffffff/#EC4899、moveParticlesOnHover=true、hoverFactor=1、alphaParticles=false、baseSize=100、sizeRandomness=1、cameraDistance=25、disableRotation=false。使用 OGL/React Bits 的 Hexo/Vue 适配，不运行 React/shadcn 脚手架。
+粒子参数唯一入口为 `app/src/config/particles.js`：500、spread 10、speed 0.1、四色 #6366F1/#10B981/#ffffff/#EC4899、moveParticlesOnHover=true、hoverFactor=1、alphaParticles=false、baseSize=100、sizeRandomness=1、cameraDistance=20、disableRotation=false、pixelRatio=1。使用 OGL/React Bits 的 Hexo/Vue 适配，不运行 React/shadcn 脚手架。历史 350/25 不是当前源码值。
 
-浅色隐藏并停止 WebGL；切回深色复用画布，隐藏标签暂停，减少动画显示静态粒子，WebGL 不可用保留纯色底，减少透明偏好恢复实底。详见 [背景记录](../docs/particles-background-2026-10-03.md)、[当前配色与组件](../docs/theme-card-restoration-2026-10-03.md)。
+浅色隐藏并停止 WebGL；切回深色复用画布，隐藏标签暂停，减少动画显示静态粒子，WebGL 不可用保留纯色底，减少透明偏好恢复实底。详见[主题、背景与组件](docs/appearance.md)。
 
 点击彩球是参考 click-colorful 的本站独立实现，不复制无声明许可的上游脚本。配置在 theme 的 site_click_effect：enable、colors、size=30、maxCount=30、duration=1000、maxActiveBalls=150；实现为 `source/js/site-click-effect.js`。不阻止默认交互，输入区/滑块/键盘/右键排除，减少动画时关闭，隐藏/离页清理。配置修改需重启 Hexo dev 或重新构建部署，不改 npm 主题，不启用管理端效果。
 
@@ -143,3 +159,7 @@ npm test 覆盖内容同步完整性/净化、真实隔离 Hexo 构建、Vue 只
 2026-10-04 启动修复：恢复上述 Hexo 加载入口；重新执行 86 项测试与完整构建，均通过。隔离构建额外检查了入口注册、空赞赏数组与带图文章二次生成。仅重启公开端后，主页、文章、音乐、关于、归档及背景/播放器依赖均返回 HTTP 200；管理端使用 localhost:5174 也返回 200，后端与管理端进程未重启。没有改写正式文章或调用真实上传接口。此次不是浏览器视觉或音频试听验收。
 
 后续缺口见 [待办](../docs/backlog.md)，AI 保留边界见 [AI 文档](../docs/ai-chat-module.md)。
+
+发布保护已接入冻结输入、prepare、真实构建、输出 verify、原子切换及退休恢复，默认 `PUBLICATION_MEDIA_ENABLED=false`。启用需要明确的环境、发布者、后端地址及注入凭据，配置错误或接口失败不会退回无保护发布。指针、目录身份和读取租约共同保护旧版本；未知回执重放原登记，旧目录不自动认领或删除。Hexo 时区跟随运行环境系统设置。
+
+资源采集覆盖冻结 Vue 构建图、源配置/正文及 HTML/CSS/结构化输出，未知脚本或缺失本地依赖会拒绝发布。当前主题同时启用 mediumZoom/Fancybox，但 Fancybox 本地 CSS 缺失，启用前须在覆盖验收中解决；正向真实主题夹具只启用 mediumZoom。实际服务覆盖、旧版本盘点和真实图床验收仍待完成，不据此开启物理删除；详见[发布媒体保护](docs/publication-media-protection.md)。

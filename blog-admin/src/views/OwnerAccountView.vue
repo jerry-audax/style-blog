@@ -24,6 +24,12 @@
                hidden
                :disabled="uploadingAvatar || saving" @change="changeAvatar"/>
         <p class="avatar-hint">JPEG / PNG / GIF / WebP，最大 2 MiB；上传后点击保存修改。</p>
+        <MediaUploadPanel :uploader="avatarUpload.uploader">
+          <template #result="{operation}">
+            <button v-if="avatarUpload.canAdopt(operation)" type="button" :disabled="saving || uploadingAvatar"
+                    @click="avatarUpload.adopt(operation)">使用此头像</button>
+          </template>
+        </MediaUploadPanel>
       </div>
 
       <div class="fields">
@@ -100,17 +106,23 @@
 </template>
 
 <script setup>
-import {computed, reactive, ref, watch} from 'vue'
+import {computed,onBeforeUnmount, reactive, ref, watch} from 'vue'
 import {useRouter} from 'vue-router'
-import {changePassword, updateProfile, uploadAvatar} from '../api'
+import {changePassword, updateProfile} from '../api'
 import {useAdminAuthStore} from '../stores/auth'
+import {useImageUpload} from '../composables/useImageUpload'
+import MediaUploadPanel from '../components/MediaUploadPanel.vue'
 
 const auth = useAdminAuthStore()
 const router = useRouter()
 const saving = ref(false)
 const changingPwd = ref(false)
 const uploadedAvatar = ref('')
-const uploadingAvatar = ref(false)
+let disposed=false,viewGeneration=0,avatarDraftVersion=0
+const avatarUpload=useImageUpload({auth,purpose:'avatar',onSucceeded:image=>{
+  avatarDraftVersion++;uploadedAvatar.value=image.url;msg.value='头像已登记，请保存修改；原头像不会自动删除';isError.value=false
+}})
+const uploadingAvatar = computed(()=>avatarUpload.busy.value)
 const avatarInput = ref(null)
 const previewUrl = computed(() => uploadedAvatar.value || auth.user?.avatar || null)
 const msg = ref('')
@@ -124,29 +136,19 @@ const pwdForm = reactive({oldPassword: '', newPassword: ''})
 const changeAvatar = async (event) => {
   const input = event.target
   const file = input.files?.[0]
-  if (!file || uploadingAvatar.value) return
-  if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.type) || file.size === 0 || file.size > 2 * 1024 * 1024) {
-    msg.value = '请选择非空且 2 MiB 以内的 JPEG / PNG / GIF / WebP 图片'
-    isError.value = true
-    input.value = ''
-    return
-  }
-  uploadingAvatar.value = true
+  if (!file || uploadingAvatar.value || saving.value) return
   try {
-    const image = await uploadAvatar(file)
-    uploadedAvatar.value = image.url
-    msg.value = '头像已上传，请保存修改；原头像不会自动删除'
-    isError.value = false
-  } catch (error) {
-    msg.value = error.message
-    isError.value = true
+    const epoch=viewGeneration
+    const image=await avatarUpload.start(file)
+    if(!disposed && epoch===viewGeneration && !image && avatarUpload.error.value){msg.value=avatarUpload.error.value;isError.value=true}
   } finally {
-    uploadingAvatar.value = false
     input.value = ''
   }
 }
 
 const discardAvatar = () => {
+  avatarUpload.invalidate()
+  avatarDraftVersion++
   uploadedAvatar.value = ''
   msg.value = '已撤销头像更换；已上传图片不会自动删除'
   isError.value = false
@@ -163,6 +165,8 @@ watch(() => auth.user, (user) => {
     form.email = user.email || ''
   }
 }, {immediate: true})
+watch(()=>[auth.verifiedUserId,auth.token],()=>{viewGeneration++;saving.value=false;uploadedAvatar.value='';avatarUpload.invalidate();msg.value=''},{flush:'sync'})
+onBeforeUnmount(()=>{disposed=true;viewGeneration++;avatarUpload.invalidate()})
 
 const changePwd = async () => {
   if (changingPwd.value) return
@@ -190,22 +194,25 @@ const changePwd = async () => {
 
 const save = async () => {
   if (saving.value || uploadingAvatar.value) return
+  const epoch=viewGeneration,who=auth.verifiedUserId,token=auth.token
+  const submittedAvatar=uploadedAvatar.value,submittedAvatarVersion=avatarDraftVersion
+  const current=()=>!disposed && epoch===viewGeneration && who===auth.verifiedUserId && token===auth.token
   saving.value = true
   try {
     const updated = await updateProfile({
       nickname: form.nickname || null,
       email: form.email || null,
-      ...(uploadedAvatar.value ? {avatar: uploadedAvatar.value} : {}),
+      ...(submittedAvatar ? {avatar: submittedAvatar} : {}),
     })
+    if(!current())return
     auth.user = updated
-    uploadedAvatar.value = ''
-    msg.value = '博主资料已更新'
+    if(avatarDraftVersion===submittedAvatarVersion) uploadedAvatar.value = ''
+    msg.value = uploadedAvatar.value ? '博主资料已更新；新的头像尚未保存，请再次保存修改' : '博主资料已更新'
     isError.value = false
   } catch (e) {
-    msg.value = e.message
-    isError.value = true
+    if(current()){msg.value = e.message;isError.value = true}
   } finally {
-    saving.value = false
+    if(current())saving.value = false
   }
 }
 </script>

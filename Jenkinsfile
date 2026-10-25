@@ -40,6 +40,7 @@ pipeline {
                     java -version
                     mvn -version
                     node --version
+                    pwsh -NoProfile -Command '$PSVersionTable.PSVersion.ToString(); if ($PSVersionTable.PSVersion.Major -lt 7) { exit 1 }'
                     node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major < 22 || (major === 22 && minor < 12)) throw new Error("blog-web requires Node.js >= 22.12")'
                     npm --version
                     docker version --format '{{.Server.Version}}'
@@ -49,15 +50,18 @@ pipeline {
 
         stage('Database migration tests') {
             steps {
-                sh 'node --test tools/database/*.test.mjs'
+                sh 'node blog-server/tools/architecture/verify-migration-names.mjs'
+                sh 'node --test blog-server/tools/database/*.test.mjs'
             }
         }
 
         stage('Backend test and package') {
             steps {
+                sh 'node blog-server/tools/architecture/verify-test-supply.mjs'
                 dir('blog-server') {
                     sh 'mvn -B -ntp clean test package'
                 }
+                sh 'node --test blog-server/tools/architecture/*.test.mjs'
             }
         }
 
@@ -194,7 +198,7 @@ pipeline {
 
         stage('Archive artifacts') {
             steps {
-                archiveArtifacts artifacts: 'blog-server/target/*.jar,blog-web/dist/**,blog-admin/dist/**', fingerprint: true
+                archiveArtifacts artifacts: 'blog-server/blog-app/target/blog-app.jar,blog-web/dist/**,blog-admin/dist/**', fingerprint: true
             }
         }
     }
