@@ -1,7 +1,9 @@
 // @vitest-environment node
-import {expect,it} from 'vitest'
+import {afterEach,expect,it,vi} from 'vitest'
 import {readFileSync} from 'node:fs'
-import config from '../../vite.config.js'
+import definition from '../../vite.config.js'
+const configForTest=()=>typeof definition==='function'?definition({command:'serve',mode:'test'}):definition
+afterEach(()=>vi.unstubAllEnvs())
 function location(text,name) {
     const start=text.indexOf(`location ${name} {`)
     if(start<0)return null
@@ -11,8 +13,17 @@ function location(text,name) {
     return Object.fromEntries(text.slice(open+1,end-1).split(';').map(entry=>entry.replace(/#[^\n]*/g,'').trim().split(/\s+/)).filter(parts=>parts.length>1).map(([name,...value])=>[name,value.join(' ')]))
 }
 it('uses a specific tracked proxy without extending all API timeouts',()=>{
+    vi.stubEnv('BLOG_API_URL','')
+    const config=configForTest()
     const proxy=config.server.proxy['/api/admin/media/uploads/'];expect(proxy).toBeDefined();expect(proxy.target).toBe('http://localhost:8080');expect(proxy.timeout).toBe(1800000);expect(proxy.proxyTimeout).toBe(1800000)
     expect(config.server.proxy['/api']).toBe('http://localhost:8080')
+})
+it('uses the configured backend for both ordinary and tracked API requests',()=>{
+    vi.stubEnv('BLOG_API_URL','http://127.0.0.1:8076')
+    const config=configForTest()
+    expect(config.server.proxy['/api']).toBe('http://127.0.0.1:8076')
+    expect(config.server.proxy['/api/admin/media/uploads/'].target).toBe('http://127.0.0.1:8076')
+    expect(config.server.proxy['/api/admin/media/uploads/'].proxyTimeout).toBe(1800000)
 })
 it('nginx tracked routes preserve upstream and large-body safeguards without widening AI or image rules',()=>{
     const container=readFileSync(new URL('../../nginx.conf.template',import.meta.url),'utf8'), outer=readFileSync(new URL('../../../deploy/nginx-admin.jrtitan.xyz.conf',import.meta.url),'utf8')

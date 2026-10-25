@@ -2,6 +2,8 @@
 const {spawn} = require('node:child_process')
 const path = require('node:path')
 const project = path.resolve(__dirname, '..')
+const {developmentBackend} = require('./development-backend.cjs')
+const developmentEnv = {...process.env, BLOG_API_URL: developmentBackend({root: project})}
 const children = [
     spawn(
         process.execPath,
@@ -13,14 +15,14 @@ const children = [
             '5173',
             '--strictPort',
         ],
-        {cwd: path.join(project, 'app'), stdio: 'inherit', windowsHide: true},
+        {cwd: path.join(project, 'app'), env: developmentEnv, stdio: 'inherit', windowsHide: true},
     ),
     spawn(
         process.execPath,
         [
             path.join(project, 'publication/interfaces/server.cjs'),
         ],
-        {cwd: project, env: {...process.env, BLOG_DEV: '1'}, stdio: 'inherit', windowsHide: true},
+        {cwd: project, env: {...developmentEnv, BLOG_DEV: '1'}, stdio: 'inherit', windowsHide: true},
     ),
 ]
 let stopping = false
