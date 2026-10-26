@@ -44,9 +44,7 @@ home_top:
     - { name: 分类, path: /categories/, class: red, icon: anzhiyu-icon-shapes, shadow: 'var(--anzhiyu-shadow-red)' }
     - { name: 标签, path: /tags/, class: green, icon: anzhiyu-icon-tags, shadow: 'var(--anzhiyu-shadow-green)' }
   swiper:
-    enable: true
-    swiper_css: /blog/pluginsSrc/anzhiyu-theme-static/swiper/swiper.min.css
-    swiper_js: /blog/pluginsSrc/anzhiyu-theme-static/swiper/swiper.min.js
+    enable: false
   banner:
     tips: 技术与思考
     title: 每一次探索，都值得记录。
@@ -69,7 +67,7 @@ aside:
 footer:
   owner: { enable: true, since: 2026 }
   custom_text: ''
-  runtime: { enable: false }
+  runtime: { enable: false, publish_date: 2026/06/19 10:38:00 }
 comments: { use: [ ], count: false, card_post_count: false }
 local_search: { enable: true, preload: false }
 darkmode: { enable: true, button: true, autoChangeMode: false }
@@ -117,7 +115,7 @@ nav_music:
   all_playlist: https://music.163.com/#/playlist?id=939817038
 aplayerInject: { enable: true, per_page: true }
 newest_comments: { enable: false }
-runtimeshow: { enable: false, publish_date: "2026-05-19T10:38:00+08:00" }
+runtimeshow: { enable: true, publish_date: 2026-05-19 10:38:00}
 translate: { enable: false }
 instantpage: false
 snackbar: { enable: true }
@@ -139,7 +137,7 @@ site_verification: null
 rightClickMenu: { enable: true }
 centerConsole: { enable: true }
 console: { enable: false }
-fancybox: false
+fancybox: true
 medium_zoom: true
 lazyload: { enable: false }
 post_copyright:
