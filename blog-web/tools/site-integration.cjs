@@ -2,7 +2,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const {sanitizeContent, articleId} = require('../tools/content.cjs')
-const {summaryOnlyPostView, removeEmptyCardSummaries} = require('./article-summary.cjs')
+const {summaryOnlyPostView, removeEmptyCardSummaries, arrangeArticleCards} = require('./article-summary.cjs')
 const {prepareMediaLoading} = require('./media-loading.cjs')
 
 // The single Meting/media owner stays outside PJAX's replacement region.
@@ -169,7 +169,7 @@ hexo.extend.filter.register('after_render:html', (html) => {
             '$1<div class="blog-empty"><h2>暂无文章</h2><p>这里记录技术学习、系统设计与开发实践。文章发布后会显示在这里。</p></div>',
         )
     }
-    return prepareMediaLoading(removeEmptyCardSummaries(html))
+    return prepareMediaLoading(arrangeArticleCards(removeEmptyCardSummaries(html)))
 })
 
 // The upstream recommendation helper fills from collection insertion order.

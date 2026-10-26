@@ -20,6 +20,57 @@ const value = (selector, property, media = '') => {
     return found
 }
 
+test('article cards grow with their summary and keep metadata in normal flow', () => {
+    const card = '#recent-posts > [data-site-article-card]'
+    assert.equal(value(card, 'height').value, 'auto')
+    assert.equal(value(`${card} > .recent-post-info`, 'height').value, 'auto')
+    const content = `${card} > .recent-post-info > .content`
+    assert.equal(value(content, 'display').value, 'block')
+    assert.equal(value(content, '-webkit-line-clamp').value, 'unset')
+    assert.equal(value(content, 'max-height').value, 'none')
+    assert.equal(value(content, 'overflow').value, 'visible')
+    assert.equal(value(content, 'background').value, 'transparent')
+    assert.equal(value(content, 'background').important, true)
+    assert.equal(value(content, 'border').value, '0')
+    assert.equal(value(content, 'box-shadow').value, 'none')
+    assert.equal(value(content, 'padding').value, '8px 12px')
+    assert.equal(value(content, 'border-left').value, '3px solid var(--site-summary-accent)')
+    assert.equal(value(`${card} .article-title`, 'color').value, 'var(--anzhiyu-fontcolor)')
+    assert.equal(value(`${card}:hover .article-title`, 'color').value, 'var(--site-summary-accent)')
+    assert.equal(value(content, 'color').value, 'var(--anzhiyu-secondtext)')
+    assert.equal(value(`${card}:hover > .recent-post-info > .content`, 'color').value, 'var(--anzhiyu-fontcolor)')
+    assert.equal(value(`${card}:hover > .recent-post-info > .content`, 'color').important, true)
+    assert.equal(value(`${card} .site-article-details > .article-meta-wrap`, 'position').value, 'static')
+    assert.equal(value(`${card} .site-article-tags > .tags`, 'flex-wrap').value, 'wrap')
+})
+
+test('pagination keeps the active page highlighted above transparent surfaces', () => {
+    const current = 'html[data-theme] #pagination .page-number.current'
+    assert.equal(value(current, 'background').value, 'var(--anzhiyu-theme)')
+    assert.equal(value(current, 'background').important, true)
+    assert.equal(value(current, 'border-color').value, 'var(--anzhiyu-theme)')
+    assert.equal(value(current, 'color').value, 'var(--site-accent-foreground)')
+    for (const selector of ['html[data-theme] #pagination a.page-number:hover',
+        'html[data-theme] #pagination a.page-number:focus-visible',
+        'html[data-theme] #pagination a.extend:hover',
+        'html[data-theme] #pagination a.extend:focus-visible']) {
+        assert.equal(value(selector, 'background').value, 'var(--anzhiyu-theme)')
+        assert.equal(value(selector, 'background').important, true)
+        assert.equal(value(selector, 'color').value, 'var(--site-accent-foreground)')
+    }
+})
+
+test('article covers fill the frame proportionally without additional hover cropping', () => {
+    const image = '#recent-posts > [data-site-article-card] > .post_cover img.post_bg'
+    assert.equal(value(image, 'object-fit').value, 'cover')
+    assert.equal(value(image, 'object-fit').important, true)
+    assert.equal(value(image, 'object-position').value, 'center')
+    assert.equal(value(image, 'width').value, '100%')
+    assert.equal(value(image, 'height').value, '100%')
+    assert.equal(value('#recent-posts > [data-site-article-card]:hover > .post_cover img.post_bg', 'transform').value, 'none')
+    assert.equal(value('#recent-posts > [data-site-article-card]:hover > .post_cover img.post_bg', 'transform').important, true)
+})
+
 test('light theme uses a light base and hides particles without forcing dark nav/footer tokens', () => {
     assert.equal(value(':root', '--site-background').value, '#f7f9fe')
     assert.equal(value('html[data-theme="dark"]', '--site-background').value, '#1b1722')

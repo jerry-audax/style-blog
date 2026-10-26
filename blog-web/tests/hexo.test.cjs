@@ -7,6 +7,7 @@ const vm = require('node:vm')
 const postcss = require('postcss')
 const {load: loadYaml} = require('js-yaml')
 const {toPost} = require('../tools/content.cjs')
+const {JSDOM} = require('jsdom')
 
 test('a real Hexo build injects the production Vue entry into a database-ID article', async () => {
     const root = path.resolve(__dirname, '..')
@@ -68,13 +69,27 @@ test('a real Hexo build injects the production Vue entry into a database-ID arti
         })
         fs.mkdirSync(path.join(sandbox, 'source/_posts'), {recursive: true})
         fs.writeFileSync(path.join(sandbox, 'source/_posts', post.name), post.text)
-        for (const [id, summary] of [[20, '明确摘要A'], [21, '<p>&nbsp;<br></p>']]) {
+        const longSummary = '明确摘要A' + '完整显示的长摘要。'.repeat(80)
+        for (const [id, summary] of [[20, longSummary], [21, '<p>&nbsp;<br></p>']]) {
             const extra = toPost({id, status: 1, title: `摘要测试${id}`, summary,
                 publishTime: '2026-09-02T12:00:00', contentHtml: `<p>BODY_ONLY_${id}</p>`,
-                categoryName: '系统设计', tagNames: ['DDD']})
+                categoryName: '系统设计', tagNames: ['DDD', 'Java', '系统设计', '数据库', '测试', '开发实践']})
             fs.writeFileSync(path.join(sandbox, 'source/_posts', extra.name), extra.text)
         }
-        const siteTheme = loadYaml(fs.readFileSync(path.join(sandbox, '_config.anzhiyu.yml'), 'utf8'))
+        for (let id = 22; id <= 29; id++) {
+            const extra = toPost({id, status: 1, title: `分页文章${id}`,
+                publishTime: `2026-08-${String(30 - id).padStart(2, '0')}T12:00:00`,
+                contentHtml: '<p>不应成为摘要的正文</p>', tagNames: []})
+            fs.writeFileSync(path.join(sandbox, 'source/_posts', extra.name), extra.text)
+        }
+        // 本用例覆盖轮播组件，固定夹具开关，避免真实站点关闭轮播后改变测试场景。
+        const themeFile = path.join(sandbox, '_config.anzhiyu.yml')
+        const fixtureTheme = fs.readFileSync(themeFile, 'utf8')
+        const swiperBlock = /(^  swiper:\r?\n)(?:    [^\r\n]*\r?\n)+/m
+        assert.match(fixtureTheme, swiperBlock)
+        fs.writeFileSync(themeFile, fixtureTheme.replace(swiperBlock,
+            '$1    enable: true\n    swiper_css: /blog/pluginsSrc/anzhiyu-theme-static/swiper/swiper.min.css\n    swiper_js: /blog/pluginsSrc/anzhiyu-theme-static/swiper/swiper.min.js\n'))
+        const siteTheme = loadYaml(fs.readFileSync(themeFile, 'utf8'))
         await hexo.init()
         assert.equal(hexo.extend.filter.list('before_generate').filter(fn => String(fn).includes('reward.QR_code')).length, 1,
             'Hexo must discover and await the site adapter through scripts/site-loader.js')
@@ -91,6 +106,25 @@ test('a real Hexo build injects the production Vue entry into a database-ID arti
             'only the explicitly supplied visible summary has a card element')
         assert.equal((home.match(/class="blog-slider__text"/g) || []).length, 1)
         assert.match(home, /明确摘要A/)
+        const homeDocument = new JSDOM(home).window.document
+        const homeCards = [...homeDocument.querySelectorAll('#recent-posts > [data-site-article-card]')]
+        assert.equal(homeCards.length, 10, 'home keeps ten articles per page')
+        const summaryCard = homeCards.find(card => card.querySelector('.article-title').getAttribute('href') === '/blog/article/20/')
+        assert.equal(summaryCard.querySelector('.content').textContent, longSummary,
+            'the entire persisted summary must survive the actual theme renderer')
+        assert.equal(summaryCard.querySelectorAll('.site-article-tags a').length, 6)
+        assert.ok(summaryCard.querySelector('.site-article-tags a[href="/blog/tags/DDD/"]'))
+        assert.deepEqual([...summaryCard.querySelector('.recent-post-info').children].map(node => node.className),
+            ['recent-post-info-top', 'site-article-details', 'content'])
+        const secondPage = fs.readFileSync(path.join(sandbox, '.build/blog/page/2/index.html'), 'utf8')
+        const secondDocument = new JSDOM(secondPage).window.document
+        const lastCard = secondDocument.querySelector('#recent-posts > [data-site-article-card]')
+        assert.equal(secondDocument.querySelectorAll('#recent-posts > [data-site-article-card]').length, 1)
+        assert.equal(lastCard.querySelector('.article-title').getAttribute('href'), '/blog/article/29/')
+        assert.equal(lastCard.querySelector('.content'), null)
+        assert.equal(lastCard.querySelector('.site-article-tags'), null)
+        assert.ok(homeDocument.querySelector('#pagination a[href="/blog/page/2/#content-inner"]'))
+        assert.ok(secondDocument.querySelector('#pagination a[href="/blog/#content-inner"], #pagination a[href="/blog/"]'))
         for (const id of [20, 21]) {
             const detail = fs.readFileSync(path.join(sandbox, `.build/blog/article/${id}/index.html`), 'utf8')
             assert.match(detail, new RegExp(`BODY_ONLY_${id}`))
@@ -229,7 +263,7 @@ test('a real Hexo build injects the production Vue entry into a database-ID arti
             window,
         })
         window.toRandomPost()
-        assert.ok(['/blog/article/19/', '/blog/article/20/', '/blog/article/21/'].includes(randomTarget))
+        assert.ok(Array.from({length: 11}, (_, index) => `/blog/article/${19 + index}/`).includes(randomTarget))
         assert.ok(
             fs.existsSync(
                 path.join(sandbox, '.build/blog/pluginsSrc/anzhiyu-theme-static/icon/ali_iconfont_css.css'),

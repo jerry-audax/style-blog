@@ -187,7 +187,12 @@ for (const layoutVersion of [1, 2]) test(`real Anzhiyu frozen home article tag a
             'licenses/react-bits.txt', 'licenses/ogl.txt']) await write(root, name, await fs.readFile(path.join(project, name)))
         const themeFile = path.join(root, '_config.anzhiyu.yml')
         // 此用例刻意同时开启两项，验证 mediumZoom 优先；不依赖开发机的主题配置。
-        const themeFixture = (await fs.readFile(themeFile, 'utf8')).replace(/^fancybox: (?:true|false)\r?$/m, 'fancybox: true')
+        const originalTheme = await fs.readFile(themeFile, 'utf8')
+        const swiperBlock = /(^  swiper:\r?\n)(?:    [^\r\n]*\r?\n)+/m
+        assert.match(originalTheme, swiperBlock)
+        // 固定已支持的轮播场景；真实站点开关不应把本用例变成另一套事件处理器测试。
+        const themeFixture = originalTheme.replace(/^fancybox: (?:true|false)\r?$/m, 'fancybox: true')
+            .replace(swiperBlock, '$1    enable: true\n    swiper_css: /blog/pluginsSrc/anzhiyu-theme-static/swiper/swiper.min.css\n    swiper_js: /blog/pluginsSrc/anzhiyu-theme-static/swiper/swiper.min.js\n')
         await fs.writeFile(themeFile, themeFixture)
         const themeBefore = await fs.readFile(themeFile)
         assert.match(themeBefore.toString('utf8'), /^medium_zoom: true$/m)

@@ -244,7 +244,7 @@ html[data-theme="dark"] #an_music_bg {
 
     #recent-posts > .recent-post-item {
         width: 100% !important;
-        height: 18em !important;
+        height: auto !important;
         margin-top: 0 !important;
         flex-direction: row !important;
     }
@@ -259,12 +259,6 @@ html[data-theme="dark"] #an_music_bg {
         height: 100% !important;
     }
 
-    #recent-posts > .recent-post-item .recent-post-info > .content {
-        display: -webkit-box !important;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 3;
-        overflow: hidden;
-    }
 }
 
 /* Upstream anzhiyu hides the homepage article excerpt (opacity: 0; height: 0).
@@ -277,6 +271,167 @@ html[data-theme="dark"] #an_music_bg {
     padding-inline: 32px;
     box-sizing: border-box;
     overflow-wrap: anywhere;
+}
+
+/* 首页与分页共用紧凑的自然高度卡片，完整摘要不受主题的固定高度与定位约束。 */
+#recent-posts > [data-site-article-card] {
+    --site-summary-accent: #9b6919;
+    height: auto !important;
+    align-items: stretch !important;
+}
+
+html[data-theme="dark"] #recent-posts > [data-site-article-card] {
+    --site-summary-accent: #e6b64d;
+}
+
+#recent-posts > [data-site-article-card] > .recent-post-info {
+    display: flex !important;
+    flex-direction: column;
+    height: auto !important;
+    min-height: 0 !important;
+    min-width: 0;
+    padding: 18px 24px !important;
+    gap: 8px;
+    box-sizing: border-box;
+    overflow: visible !important;
+}
+
+#recent-posts > [data-site-article-card] .recent-post-info-top-tips {
+    margin-top: 0 !important;
+}
+
+#recent-posts > [data-site-article-card] .recent-post-info-top {
+    padding: 0 !important;
+}
+
+#recent-posts > [data-site-article-card] .article-title {
+    color: var(--anzhiyu-fontcolor) !important;
+    font-size: 20px;
+    line-height: 1.4 !important;
+}
+
+#recent-posts > [data-site-article-card]:hover .article-title {
+    color: var(--site-summary-accent) !important;
+}
+
+#recent-posts > [data-site-article-card] > .recent-post-info > .content {
+    display: block !important;
+    -webkit-line-clamp: unset !important;
+    line-clamp: unset;
+    max-height: none !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 8px 12px !important;
+    background: transparent !important;
+    border: 0 !important;
+    border-left: 3px solid var(--site-summary-accent) !important;
+    border-radius: 8px !important;
+    box-shadow: none !important;
+    color: var(--anzhiyu-secondtext);
+    font-size: 0.875rem;
+    line-height: 1.65;
+    transition: color 0.2s ease;
+}
+
+#recent-posts > [data-site-article-card]:hover > .recent-post-info > .content {
+    color: var(--anzhiyu-fontcolor) !important;
+}
+
+#recent-posts > [data-site-article-card] .site-article-details {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+    min-width: 0;
+}
+
+#recent-posts > [data-site-article-card] .site-article-details > .article-meta-wrap {
+    position: static !important;
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    flex: 0 0 auto;
+    width: auto !important;
+    padding: 0 !important;
+    margin-left: auto;
+    gap: 4px 12px;
+    color: var(--anzhiyu-secondtext);
+    font-size: 0.8125rem;
+    white-space: normal !important;
+    box-sizing: border-box;
+}
+
+#recent-posts > [data-site-article-card] .site-article-details .article-meta-label,
+#recent-posts > [data-site-article-card] .site-article-details .time_hidden {
+    display: none !important;
+}
+
+#recent-posts > [data-site-article-card] .site-article-tags {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+#recent-posts > [data-site-article-card] .site-article-tags > .tags {
+    display: flex !important;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    line-height: 1.5;
+}
+
+#recent-posts > [data-site-article-card] .site-article-tags a {
+    color: var(--anzhiyu-secondtext);
+    font-size: 0.8125rem;
+    overflow-wrap: anywhere;
+}
+
+#recent-posts > [data-site-article-card] .site-article-tags a:hover {
+    color: var(--anzhiyu-main);
+}
+
+#recent-posts > [data-site-article-card] > .post_cover img.post_bg {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+    object-position: center;
+}
+
+/* 封面保持既定的居中裁切范围，悬浮时不额外放大。 */
+#recent-posts > [data-site-article-card]:hover > .post_cover img.post_bg {
+    transform: none !important;
+}
+
+@media screen and (min-width: 769px) {
+    #recent-posts > [data-site-article-card] > .post_cover {
+        width: 40% !important;
+        position: relative;
+        align-self: stretch;
+        height: auto !important;
+        flex-shrink: 0;
+    }
+
+    #recent-posts > [data-site-article-card] > .recent-post-info {
+        width: 60% !important;
+    }
+
+    #recent-posts > [data-site-article-card] > .recent-post-info.no-cover {
+        width: 100% !important;
+    }
+
+    #recent-posts > [data-site-article-card] > .post_cover > a {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+    }
+}
+
+@media screen and (max-width: 768px) {
+    #recent-posts > [data-site-article-card] > .post_cover {
+        height: 160px !important;
+    }
+
+    #recent-posts > [data-site-article-card] > .recent-post-info {
+        padding: 16px !important;
+    }
 }
 
 /* The category strip in the screenshot is part of the theme's #category-bar,
@@ -338,6 +493,27 @@ html[data-theme="dark"] div#page {
     background-color: var(--site-glass-strong-surface) !important;
     border-color: rgb(190 184 210 / 0.16) !important;
     backdrop-filter: blur(12px);
+}
+
+/* 选中页码保留实色底；直接跟随主题色，避免透明面板或 JS 缓存的主色破坏深浅色对比。 */
+html[data-theme] #pagination .page-number.current,
+html[data-theme] #pagination a.page-number:hover,
+html[data-theme] #pagination a.page-number:focus-visible,
+html[data-theme] #pagination a.extend:hover,
+html[data-theme] #pagination a.extend:focus-visible {
+    background: var(--anzhiyu-theme) !important;
+    color: var(--site-accent-foreground) !important;
+    border-color: var(--anzhiyu-theme) !important;
+}
+
+html[data-theme] #pagination a.page-number,
+html[data-theme] #pagination a.extend {
+    color: var(--anzhiyu-fontcolor);
+}
+
+html[data-theme] #pagination a:focus-visible {
+    outline: 2px solid var(--anzhiyu-theme);
+    outline-offset: 3px;
 }
 
 /* Click feedback: above normal content/nav (<=101), below the theme's
